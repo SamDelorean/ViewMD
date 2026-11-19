@@ -16,9 +16,10 @@ import urllib.error
 import urllib.request
 
 try:
-    from . import catalog
+    from . import catalog, siwc_auth
 except ImportError:
     import catalog
+    import siwc_auth
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("SURF_AI_PORT", "8765"))
@@ -41,35 +42,35 @@ def send(handler, kind, text=None):
 
 
 def stream_provider(provider, messages):
-    if provider == "openai":
-        key = os.environ.get("OPENAI_API_KEY")
-        model = os.environ.get("SURF_OPENAI_MODEL")
-        if not key or not model:
-            raise RuntimeError("Configura OPENAI_API_KEY y SURF_OPENAI_MODEL en T160")
-        uri = "https://api.openai.com/v1/responses"
-        payload = {"model": model, "input": messages, "stream": True}
-        headers = {"Authorization": "Bearer " + key}
-    elif provider == "anthropic":
-        key = os.environ.get("ANTHROPIC_API_KEY")
-        model = os.environ.get("SURF_ANTHROPIC_MODEL")
-        if not key or not model:
-            raise RuntimeError("Configura ANTHROPIC_API_KEY y SURF_ANTHROPIC_MODEL en T160")
-        uri = "https://api.anthropic.com/v1/messages"
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": int(os.environ.get("SURF_MAX_TOKENS", "1536")),
-            "stream": True,
-        }
-        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-    else:
-        raise RuntimeError("Proveedor desconocido")
+    """Only the ChatGPT-plan OAuth route is allowed in live Surf AI.
 
-    headers["Content-Type"] = "application/json"
+    Never use OPENAI_API_KEY, ANTHROPIC_API_KEY or a paid API fallback.
+    Anthropic subscriptions need a distinct authorized integration.
+    """
+    if provider != "openai":
+        raise RuntimeError(
+            "Claude real pendiente: no se permite facturación adicional")
+    model = os.environ.get("SURF_OPENAI_MODEL", "").strip()
+    if not model:
+        raise RuntimeError(
+            "Selecciona un modelo autorizado: python3 -m t160.siwc_auth models")
+    token = siwc_auth.access_token()
+    payload = {
+        "model": model,
+        "input": messages,
+        "store": False,
+        "stream": True,
+    }
     request = urllib.request.Request(
-        uri, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers=headers, method="POST"
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json",
+        },
+        method="POST",
     )
+    completed = False
     with urllib.request.urlopen(request, timeout=180) as reply:
         for raw in reply:
             if not raw.startswith(b"data:"):
@@ -79,20 +80,18 @@ def stream_provider(provider, messages):
                 continue
             event = json.loads(data.decode("utf-8"))
             event_type = event.get("type")
-            if provider == "openai":
-                if event_type == "response.output_text.delta":
-                    delta = event.get("delta", "")
-                    if delta:
-                        yield delta
-                elif event_type in ("response.failed", "response.incomplete", "error"):
-                    raise RuntimeError("La API OpenAI no completó la respuesta")
-            else:
-                if event_type == "content_block_delta":
-                    delta = event.get("delta", {})
-                    if delta.get("type") == "text_delta" and delta.get("text"):
-                        yield delta["text"]
-                elif event_type == "error":
-                    raise RuntimeError("La API Anthropic informó un error")
+            if event_type == "response.output_text.delta":
+                delta = event.get("delta", "")
+                if delta:
+                    yield delta
+            elif event_type == "response.completed":
+                completed = True
+            elif event_type in ("response.failed", "response.incomplete",
+                                "error"):
+                raise RuntimeError(
+                    "OpenAI no completó la respuesta. Comprueba tu cuota.")
+    if not completed:
+        raise RuntimeError("Respuesta interrumpida antes de response.completed")
 
 
 class Handler(socketserver.StreamRequestHandler):
