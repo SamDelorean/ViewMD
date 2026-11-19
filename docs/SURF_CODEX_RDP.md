@@ -65,7 +65,7 @@ o encapsular RDP en el túnel SSH ya existente.
   `~/.local/bin/surf-codex-rdp`, ejecutable.
 - Lanzador gráfico:
   `~/.local/share/applications/surf-codex-rdp.desktop`.
-- Resolución inicial 1280×700, profundidad 16 bpp, compresión,
+- Resolución inicial 1280×700, profundidad 32 bpp, canal GFX RFX, compresión,
   sin efectos de papel tapiz ni animaciones, con portapapeles habilitado.
   La contraseña se solicita en la terminal con
   `/from-stdin:force`: **no** aparece en el listado de procesos.
@@ -87,6 +87,24 @@ o encapsular RDP en el túnel SSH ya existente.
    devuelve «Logged in using ChatGPT». Desde ahí se puede iniciar
    Codex CLI manualmente con `codex`, cuando el usuario decida
    realmente consumir cuota del plan.
+
+## Corrección de compatibilidad gráfica
+
+En la primera conexión autenticada desde Surf, GNOME Remote Desktop
+cerró RDP al detectar que FreeRDP 2 no anunciaba la extensión
+**RDP Graphics Pipeline (MS-RDPEGFX)**. Los registros de T160 mostraron:
+`Client did not advertise support for the Graphics Pipeline`.
+
+Se corrigió el lanzador local de Surf:
+`~/.local/bin/surf-codex-rdp`, cambiando profundidad de 16 a
+**32 bits** y agregando **`/gfx:RFX`** para anunciar explícitamente
+RDPGFX. El script pasó `sh -n`; FreeRDP 2.11.7 reconoce la opción.
+Se guardó una copia anterior como
+`~/.local/bin/surf-codex-rdp.before-gfx-20261118`.
+
+**Pendiente:** repetir la conexión con contraseña RDP auténtica
+desde el lanzador y confirmar que aparece el escritorio. La
+negociación de GFX no se alcanza en pruebas con contraseña falsa.
 
 ## Pruebas ejecutadas
 
