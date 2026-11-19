@@ -18,7 +18,9 @@ import urllib.request
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("SURF_AI_PORT", "8765"))
 MAX_LINE = 1024 * 1024
-MAX_TURNS = 12
+MAX_TURNS = 12  # provider context limit, not UI limit
+PAGE_SIZE = 5
+MAX_STORED_MESSAGES = 200
 sessions = {}
 lock = threading.Lock()
 
@@ -95,7 +97,7 @@ class Handler(socketserver.StreamRequestHandler):
         if not raw or len(raw) > MAX_LINE:
             return
         fields = raw.rstrip(b"\r\n").split(b"\t", 3)
-        if len(fields) != 4 or fields[0] != b"ASK":
+        if len(fields) != 4 or fields[0] not in (b"ASK", b"HISTORY"):
             send(self, "ERROR", "Protocolo incorrecto")
             return
         try:
@@ -106,10 +108,23 @@ class Handler(socketserver.StreamRequestHandler):
             if not session or len(session) > 80 or not all(
                     c.isalnum() or c in "-_" for c in session):
                 raise ValueError("Identificador de sesión inválido")
+            ident = (session, provider)
+            if fields[0] == b"HISTORY":
+                offset = int(fields[3].decode("ascii"))
+                if offset < 0 or offset > MAX_STORED_MESSAGES:
+                    raise ValueError("Desplazamiento fuera de rango")
+                with lock:
+                    saved = list(sessions.get(ident, []))
+                end = max(0, len(saved) - offset)
+                start = max(0, end - PAGE_SIZE)
+                for message in saved[start:end]:
+                    send(self, "ITEM", message["role"] + "\t" + message["content"])
+                send(self, "MORE", "1" if start > 0 else "0")
+                send(self, "DONE")
+                return
             prompt = base64.b64decode(fields[3], validate=True).decode("utf-8")
             if not prompt.strip() or len(prompt) > 100000:
                 raise ValueError("Consulta vacía o demasiado extensa")
-            ident = (session, provider)
             with lock:
                 previous = list(sessions.get(ident, []))
             history = previous[-MAX_TURNS * 2:] + [
@@ -133,9 +148,10 @@ class Handler(socketserver.StreamRequestHandler):
             if not answer:
                 raise RuntimeError("La API no devolvió texto")
             with lock:
-                sessions[ident] = (history + [{
-                    "role": "assistant", "content": "".join(answer)
-                }])[-MAX_TURNS * 2:]
+                sessions[ident] = (previous + [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": "".join(answer)}
+                ])[-MAX_STORED_MESSAGES:]
             send(self, "DONE")
         except urllib.error.HTTPError as exc:
             send(self, "ERROR", "API HTTP {}: {}".format(
