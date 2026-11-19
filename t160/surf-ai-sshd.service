@@ -1,0 +1,18 @@
+# Restricted LAN-only SSH transport for Surf AI, T160 host.
+# Uses existing dedicated sshd_config (port 2222, public-key-only,
+# local forwarding to 127.0.0.1:8765, no shell or TTY).
+# Install as /etc/systemd/system/surf-ai-sshd.service with root privileges.
+[Unit]
+Description=Surf AI dedicated restricted SSH tunnel endpoint
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/sshd -t -f /home/spc/Projects/surf-ai/ssh/sshd_config
+ExecStart=/usr/sbin/sshd -D -e -f /home/spc/Projects/surf-ai/ssh/sshd_config
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
