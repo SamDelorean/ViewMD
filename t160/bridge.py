@@ -139,7 +139,7 @@ class Handler(socketserver.StreamRequestHandler):
                 send(self, "DONE")
                 return
             if fields[0] == b"DELETE":
-                catalog.soft_delete(provider, session)
+                catalog.delete_session(provider, session)
                 with lock:
                     sessions.pop(ident, None)
                 send(self, "DONE")
