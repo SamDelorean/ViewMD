@@ -576,7 +576,8 @@ static void load_catalog(SurfUI *ui, gboolean append) {
         gtk_widget_set_margin_start(text, 7);
         gtk_widget_set_margin_end(text, 2);
         gtk_box_pack_start(GTK_BOX(cell), text, TRUE, TRUE, 0);
-        gtk_widget_set_size_request(more, 36, 40);
+        gtk_widget_set_size_request(more, 38, 38);
+        gtk_widget_set_valign(more, GTK_ALIGN_CENTER);
         gtk_button_set_relief(GTK_BUTTON(more), GTK_RELIEF_NONE);
         set_menu_state(more, row_status);
         gtk_box_pack_end(GTK_BOX(cell), more, FALSE, FALSE, 0);
