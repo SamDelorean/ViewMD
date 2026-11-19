@@ -104,3 +104,27 @@ en la Surface RT sigue pendiente; el smoke sólo confirma el arranque.
   `~/.config/surf-ai-backups/xfce4-panel.xml.before-surf-ai-favorite`.
 - Logs: `~/Projects/SurfAI/surf-icon-build.log` y
   `~/Projects/SurfAI/surf-icon-smoke.log`.
+
+## Compilación de interfaz y estado del puente (18-11-2026)
+
+- Surf: revisión `1d180dc` (rama `surf-ai-client`) instalada por fast-forward.
+- Nuevas funciones: botón «⋯» por conversación; menú contextual preciso,
+  título de ventana `Surf AI - <conversación> - <herramienta>`,
+  vista vacía al iniciar una conversación y estado inferior oculto en reposo.
+- Compilación nativa ARMv7: `nice -n 10 make -C surf -j1` **PASS**.
+- `file`: ELF ARM EABI5 de 32 bits, musl; dependencias dinámicas **PASS**.
+- Compilación sin advertencias ni errores registrados.
+- Prueba `DISPLAY=:0 timeout 8 ./surf/surf-ai`: **GUI_SMOKE_PASS**;
+  cierre controlado por timeout (143), sin errores críticos en el log.
+- El lanzador XFCE4 conserva la ruta al binario actualizado.
+- Logs en `/home/user/Projects/SurfAI/surf-window-title-build.log` y
+  `/home/user/Projects/SurfAI/surf-window-title-smoke.log`.
+- T160, solo lectura: proceso `python3 t160/bridge.py --mock`
+  escuchando en `127.0.0.1:8765`, SSH limitado a LAN en puerto 2222,
+  sin servicio de arranque automático localizado. Claves API no presentes
+  en el entorno examinado (esto no prueba ausencia absoluta en disco).
+- No se habilitaron ni reiniciaron servicios en T160; sin Codex.
+- Commander utilizado con autorización del usuario para compilar/probar
+  en Surf y auditoría de solo lectura en T160. Sin supervisión continua.
+- Las pruebas manuales de menú «⋯», renombrado, título y tacto están
+  pendientes: el smoke test verifica arranque, no interacción humana.
