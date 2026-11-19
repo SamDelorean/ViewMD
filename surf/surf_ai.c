@@ -450,7 +450,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
   g_object_unref(client);
   if (protocol_error || !done) {
     if (!protocol_error)
-      set_status(ui, "Respuesta incompleta de T160; intenta Recargar");
+      set_status(ui, "Respuesta incompleta de T160; intenta Actualizar");
     g_string_free(response, TRUE);
     return NULL;
   }
@@ -620,8 +620,8 @@ static void on_load_more(GtkButton *btn, gpointer ptr) {
   (void)btn; load_catalog(ptr, TRUE);
 }
 
-/* Reload is a read-only server-side SQLite snapshot, not a new ASK or
-   provider API request. The selected conversation is fully refreshed on
+/* Actualizar reads an authoritative SQLite snapshot on the T160.
+   It never repeats ASK or invokes a provider API. The conversation is refreshed on
    T160 and the Surf viewer is replaced with its last five saved messages. */
 static void on_reload(GtkButton *button, gpointer ptr) {
   SurfUI *ui = ptr;
@@ -780,7 +780,7 @@ static void show_row_actions(SurfUI *ui, GtkWidget *row,
   if (!GTK_IS_LIST_BOX_ROW(row) || ui->busy) return;
   GtkWidget *popover = gtk_popover_new(anchor);
   GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-  GtkWidget *reload = gtk_button_new_with_label("Recargar");
+  GtkWidget *reload = gtk_button_new_with_label("Actualizar");
   GtkWidget *rename = gtk_button_new_with_label("Renombrar");
   GtkWidget *remove = gtk_button_new_with_label("Eliminar...");
   g_object_set_data(G_OBJECT(popover), "surf-target-row", row);
