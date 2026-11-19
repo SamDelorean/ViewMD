@@ -1,0 +1,22 @@
+# Install in ~/.config/systemd/user/surf-ai-bridge.service on T160.
+# The environment file contains the chosen SIWC-authorized model only.
+# No API keys; never use --mock with this real-plan unit.
+[Unit]
+Description=Surf AI T160 bridge (ChatGPT plan authorization only)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/surf-ai/ViewMD
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=%h/.config/surf-ai/bridge.env
+ExecStart=/usr/bin/python3 -B %h/Projects/surf-ai/ViewMD/t160/bridge.py
+Restart=on-failure
+RestartSec=8
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
