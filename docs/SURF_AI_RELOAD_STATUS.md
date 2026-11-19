@@ -65,8 +65,10 @@ pero no forzará una segunda ejecución del modelo.
 
 ## Seguridad, restricciones y despliegue
 
-No se alteran credenciales, servicios, kernel, Wi-Fi ni archivos
-de conversaciones. No se utiliza Codex ni supervisión continua.
+No se modifican credenciales, servicios, kernel ni Wi-Fi. En la
+T160, al utilizar esta función se actualizarán únicamente los metadatos
+de estado en la base SQLite; **no se borran ni reenvían los mensajes**.
+No se utiliza Codex ni supervisión continua.
 
 **Estado: fuente y pruebas automatizadas añadidas a GitHub, NO
 ejecutadas todavía en hardware**. Antes de usar el nuevo protocolo se
