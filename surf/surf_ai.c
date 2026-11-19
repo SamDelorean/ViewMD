@@ -765,16 +765,6 @@ int main(int argc, char **argv) {
                    G_CALLBACK(on_zoom_changed), &ui);
   g_signal_connect(ui.viewer->text_view, "key-press-event",
                    G_CALLBACK(on_reader_key), &ui);
-  history_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  gtk_box_pack_start(GTK_BOX(main_column),history_controls,FALSE,FALSE,0);
-  ui.older = gtk_button_new_with_label("Mensajes anteriores");
-  ui.recent = gtk_button_new_with_label("Volver a recientes");
-  gtk_box_pack_start(GTK_BOX(history_controls),ui.older,FALSE,FALSE,0);
-  gtk_box_pack_start(GTK_BOX(history_controls),ui.recent,FALSE,FALSE,0);
-  gtk_widget_set_sensitive(ui.older,FALSE);
-  gtk_widget_set_sensitive(ui.recent,FALSE);
-  g_signal_connect(ui.older,"clicked",G_CALLBACK(on_older),&ui);
-  g_signal_connect(ui.recent,"clicked",G_CALLBACK(on_recent),&ui);
   bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_box_pack_start(GTK_BOX(main_column), bottom, FALSE, FALSE, 0);
   input_scroller = gtk_scrolled_window_new(NULL, NULL);
@@ -786,6 +776,23 @@ int main(int argc, char **argv) {
   gtk_container_add(GTK_CONTAINER(input_scroller), ui.input);
   g_signal_connect(ui.input, "key-press-event",
                    G_CALLBACK(on_input_key), &ui);
+  /* Two stacked history controls replace the old touch-keyboard button.
+     This shares the composer row and frees one complete message-view row. */
+  history_controls = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_widget_set_valign(history_controls, GTK_ALIGN_CENTER);
+  gtk_box_pack_start(GTK_BOX(bottom), history_controls, FALSE, FALSE, 0);
+  ui.older = gtk_button_new_with_label("Mensajes anteriores");
+  ui.recent = gtk_button_new_with_label("Volver a recientes");
+  gtk_widget_set_size_request(ui.older, 158, 42);
+  gtk_widget_set_size_request(ui.recent, 158, 42);
+  gtk_widget_set_tooltip_text(ui.older, "Cargar cinco mensajes anteriores");
+  gtk_widget_set_tooltip_text(ui.recent, "Volver a los últimos cinco mensajes");
+  gtk_box_pack_start(GTK_BOX(history_controls), ui.older, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(history_controls), ui.recent, FALSE, FALSE, 0);
+  gtk_widget_set_sensitive(ui.older, FALSE);
+  gtk_widget_set_sensitive(ui.recent, FALSE);
+  g_signal_connect(ui.older, "clicked", G_CALLBACK(on_older), &ui);
+  g_signal_connect(ui.recent, "clicked", G_CALLBACK(on_recent), &ui);
   ui.send = gtk_button_new_with_label("Enviar");
   gtk_widget_set_size_request(ui.send, 96, 48);
   gtk_box_pack_end(GTK_BOX(bottom), ui.send, FALSE, FALSE, 0);
