@@ -444,6 +444,9 @@ static void load_catalog(SurfUI *ui, gboolean append) {
       gchar *decoded = decode_b64(lines[i]+8);
       gchar **fields = g_strsplit(decoded, "\t", 3);
       if (fields[0] && fields[1] && fields[2]) {
+        /* After a first reply or rename, use the canonical T160 title. */
+        if (!ui->new_session && g_strcmp0(fields[0], ui->session) == 0)
+          set_conversation_title(ui, fields[2]);
         GtkWidget *row = gtk_list_box_row_new();
         GtkWidget *cell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         GtkWidget *text = gtk_label_new(fields[2]);
