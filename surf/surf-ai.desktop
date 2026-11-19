@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Surf AI
+Comment=Cliente gráfico GTK3 de IA mediante T160
+Exec=surf-ai
+Icon=accessories-text-editor
+Terminal=false
+Categories=Network;Utility;
+StartupNotify=true
