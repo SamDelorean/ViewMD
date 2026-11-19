@@ -16,7 +16,7 @@
 
 typedef struct {
   GtkWidget *window, *input, *status, *send, *new_chat, *provider;
-  GtkWidget *sidebar, *session_list, *scroll, *mode_buttons[4];
+  GtkWidget *sidebar, *sidebar_restore, *session_list, *scroll, *mode_buttons[4];
   GtkWidget *load_more, *older, *recent, *rename_button, *delete_button;
   gchar *list_cursor;
   guint history_offset;
@@ -535,9 +535,16 @@ static gboolean refresh_after_answer(gpointer ptr) {
 
 static void on_toggle_sidebar(GtkButton *button, gpointer ptr) {
   SurfUI *ui = ptr;
+  gboolean show_sidebar;
   (void)button;
-  gtk_revealer_set_reveal_child(GTK_REVEALER(ui->sidebar),
-    !gtk_revealer_get_reveal_child(GTK_REVEALER(ui->sidebar)));
+  show_sidebar = !gtk_revealer_get_reveal_child(GTK_REVEALER(ui->sidebar));
+  gtk_revealer_set_reveal_child(GTK_REVEALER(ui->sidebar), show_sidebar);
+  /* A separate minimal menu button remains reachable when the sidebar
+     is collapsed; the entire top header has been removed. */
+  if (show_sidebar)
+    gtk_widget_hide(ui->sidebar_restore);
+  else
+    gtk_widget_show(ui->sidebar_restore);
 }
 
 static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
@@ -624,9 +631,10 @@ static void on_new_chat(GtkWidget *widget, gpointer ptr) {
 
 int main(int argc, char **argv) {
   SurfUI ui = {0};
-  GtkWidget *root, *header, *scroller, *input_scroller, *bottom, *label;
+  GtkWidget *root, *scroller, *input_scroller, *bottom;
   GtkWidget *workspace, *sidebar_box, *main_column, *toggle;
   GtkWidget *side_scroll, *side_controls, *history_controls;
+  GtkWidget *mode_row1, *mode_row2, *sidebar_restore;
   const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
   gtk_init(&argc, &argv);
   config = config_new();
@@ -649,42 +657,61 @@ int main(int argc, char **argv) {
   gtk_container_set_border_width(GTK_CONTAINER(root), 8);
   gtk_container_add(GTK_CONTAINER(ui.window), root);
 
-  header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-  gtk_box_pack_start(GTK_BOX(root), header, FALSE, FALSE, 0);
-  toggle = gtk_button_new_with_label("☰");
-  gtk_widget_set_tooltip_text(toggle, "Mostrar u ocultar conversaciones");
-  gtk_widget_set_size_request(toggle, 48, 48);
-  gtk_box_pack_start(GTK_BOX(header), toggle, FALSE, FALSE, 0);
-  label = gtk_label_new("Surf AI");
-  gtk_box_pack_start(GTK_BOX(header), label, FALSE, FALSE, 6);
-  for (gint i = 0; i < 4; i++) {
-    ui.mode_buttons[i] = gtk_toggle_button_new_with_label(modes[i]);
-    gtk_widget_set_size_request(ui.mode_buttons[i], -1, 48);
-    g_object_set_data(G_OBJECT(ui.mode_buttons[i]), "surf-mode",
-                      GINT_TO_POINTER(i));
-    gtk_box_pack_start(GTK_BOX(header), ui.mode_buttons[i],
-                       FALSE, FALSE, 0);
-    g_signal_connect(ui.mode_buttons[i], "toggled",
-                     G_CALLBACK(on_mode_selected), &ui);
-  }
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui.mode_buttons[0]), TRUE);
+  /* The workspace occupies the full window height: no separate top bar. */
   workspace = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_box_pack_start(GTK_BOX(root), workspace, TRUE, TRUE, 0);
+
+  /* Only visible when the left sidebar is hidden, so it can be reopened. */
+  sidebar_restore = gtk_button_new_with_label("☰");
+  ui.sidebar_restore = sidebar_restore;
+  gtk_widget_set_tooltip_text(sidebar_restore, "Mostrar conversaciones");
+  gtk_widget_set_size_request(sidebar_restore, 48, 48);
+  gtk_widget_set_valign(sidebar_restore, GTK_ALIGN_START);
+  gtk_widget_set_no_show_all(sidebar_restore, TRUE);
+  gtk_box_pack_start(GTK_BOX(workspace), sidebar_restore, FALSE, FALSE, 0);
+  g_signal_connect(sidebar_restore, "clicked",
+                   G_CALLBACK(on_toggle_sidebar), &ui);
+
   ui.sidebar = gtk_revealer_new();
   gtk_revealer_set_transition_type(GTK_REVEALER(ui.sidebar),
                                    GTK_REVEALER_TRANSITION_TYPE_SLIDE_RIGHT);
   gtk_revealer_set_reveal_child(GTK_REVEALER(ui.sidebar), TRUE);
   gtk_box_pack_start(GTK_BOX(workspace), ui.sidebar, FALSE, FALSE, 0);
-  sidebar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-  gtk_widget_set_size_request(sidebar_box, 245, -1);
+
+  sidebar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_widget_set_size_request(sidebar_box, 252, -1);
   gtk_container_add(GTK_CONTAINER(ui.sidebar), sidebar_box);
+
+  /* Row 1, left-to-right: menu, GPT, Codex. */
+  mode_row1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_box_pack_start(GTK_BOX(sidebar_box), mode_row1, FALSE, FALSE, 0);
+  toggle = gtk_button_new_with_label("☰");
+  gtk_widget_set_tooltip_text(toggle, "Ocultar conversaciones");
+  gtk_widget_set_size_request(toggle, 48, 46);
+  gtk_box_pack_start(GTK_BOX(mode_row1), toggle, FALSE, FALSE, 0);
+  g_signal_connect(toggle, "clicked", G_CALLBACK(on_toggle_sidebar), &ui);
+
+  /* Row 2: Claude, Claude Code. No duplicated provider heading. */
+  mode_row2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_box_pack_start(GTK_BOX(sidebar_box), mode_row2, FALSE, FALSE, 0);
+  for (gint i = 0; i < 4; i++) {
+    GtkWidget *row = i < 2 ? mode_row1 : mode_row2;
+    ui.mode_buttons[i] = gtk_toggle_button_new_with_label(modes[i]);
+    gtk_widget_set_size_request(ui.mode_buttons[i], -1, 46);
+    g_object_set_data(G_OBJECT(ui.mode_buttons[i]), "surf-mode",
+                      GINT_TO_POINTER(i));
+    gtk_box_pack_start(GTK_BOX(row), ui.mode_buttons[i], TRUE, TRUE, 0);
+    g_signal_connect(ui.mode_buttons[i], "toggled",
+                     G_CALLBACK(on_mode_selected), &ui);
+  }
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui.mode_buttons[0]), TRUE);
+
+  /* Row 3: new conversation. The list begins directly below it. */
   ui.new_chat = gtk_button_new_with_label("+ Nueva conversación");
-  gtk_widget_set_size_request(ui.new_chat, -1, 48);
-  gtk_box_pack_start(GTK_BOX(sidebar_box), ui.new_chat, FALSE, FALSE, 4);
+  gtk_widget_set_size_request(ui.new_chat, -1, 46);
+  gtk_box_pack_start(GTK_BOX(sidebar_box), ui.new_chat, FALSE, FALSE, 0);
   g_signal_connect(ui.new_chat, "clicked", G_CALLBACK(on_new_chat), &ui);
-  label = gtk_label_new("Conversaciones · recientes primero");
-  gtk_label_set_xalign(GTK_LABEL(label), 0);
-  gtk_box_pack_start(GTK_BOX(sidebar_box), label, FALSE, FALSE, 4);
+
   side_scroll = gtk_scrolled_window_new(NULL, NULL);
   gtk_scrolled_window_set_kinetic_scrolling(
       GTK_SCROLLED_WINDOW(side_scroll), TRUE);
@@ -711,8 +738,6 @@ int main(int argc, char **argv) {
   gtk_box_pack_start(GTK_BOX(side_controls),ui.delete_button,TRUE,TRUE,0);
   g_signal_connect(ui.rename_button,"clicked",G_CALLBACK(on_rename),&ui);
   g_signal_connect(ui.delete_button,"clicked",G_CALLBACK(on_delete),&ui);
-  g_signal_connect(toggle, "clicked", G_CALLBACK(on_toggle_sidebar), &ui);
-
   main_column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_widget_set_hexpand(main_column, TRUE);
   gtk_box_pack_start(GTK_BOX(workspace), main_column, TRUE, TRUE, 6);
