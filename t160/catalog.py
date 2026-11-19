@@ -42,6 +42,9 @@ def connection():
         id TEXT NOT NULL, provider TEXT NOT NULL, idx INTEGER NOT NULL,
         role TEXT NOT NULL, content TEXT NOT NULL,
         PRIMARY KEY(id, provider, idx))""")
+    db.execute("""CREATE TABLE IF NOT EXISTS codex_threads (
+        session TEXT PRIMARY KEY, thread_id TEXT NOT NULL
+    )""")
     try:
         with db:
             yield db
@@ -150,6 +153,8 @@ def delete_session(provider, session):
             raise ValueError("Conversación no encontrada")
         db.execute("""DELETE FROM messages WHERE provider=? AND id=?""",
                    (provider, session))
+        if provider == "codex":
+            db.execute("DELETE FROM codex_threads WHERE session=?", (session,))
 
 
 def append_pair(provider, session, title, user_text, assistant_text):
@@ -193,3 +198,31 @@ def context(provider, session, limit=24):
             WHERE id=? AND provider=? ORDER BY idx DESC LIMIT ?""",
             (session, provider, limit)).fetchall()
     return [{"role": r, "content": c} for r,c in reversed(rows)]
+
+
+def get_codex_thread(session):
+    """Canonical app-server thread mapping; never read another provider's ids."""
+    with LOCK, connection() as db:
+        row = db.execute(
+            "SELECT thread_id FROM codex_threads WHERE session=?",
+            (session,)
+        ).fetchone()
+    return row[0] if row else None
+
+
+def set_codex_thread(session, thread_id):
+    """Immutable binding; cannot silently redirect a Surf conversation."""
+    if not session or not thread_id or len(thread_id) > 160:
+        raise ValueError("ID de conversación Codex inválido")
+    with LOCK, connection() as db:
+        existing = db.execute(
+            "SELECT thread_id FROM codex_threads WHERE session=?",
+            (session,)
+        ).fetchone()
+        if existing and existing[0] != thread_id:
+            raise ValueError("La conversación Codex ya tiene un hilo distinto")
+        if not existing:
+            db.execute(
+                "INSERT INTO codex_threads(session,thread_id) VALUES (?,?)",
+                (session, thread_id),
+            )
