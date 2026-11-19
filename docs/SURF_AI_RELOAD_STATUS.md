@@ -1,4 +1,4 @@
-# Surf AI — Recarga de conversación y semáforo integrado (18-11-2026)
+# Surf AI — Actualización de conversación y semáforo integrado (18-11-2026)
 
 ## Interfaz
 
@@ -17,16 +17,16 @@ La alternancia amarilla se realiza con un temporizador **local GTK**
 de 650 ms, exclusivamente mientras la lista muestra alguna respuesta
 en curso. **No hay supervisión de procesos, monitoreo remoto ni consultas
 periódicas a la T160.** El estado se consulta únicamente al listar,
-seleccionar o recargar una conversación y al terminar una respuesta
+seleccionar o actualizar una conversación y al terminar una respuesta
 originada desde Surf AI.
 
-El menú «⋯» tiene tres acciones: **Recargar, Renombrar y Eliminar**.
+El menú «⋯» tiene tres acciones: **Actualizar, Renombrar y Eliminar**.
 El menú por clic derecho sigue disponible. El borrado conserva
 confirmación obligatoria.
 
-## ¿Qué hace Recargar?
+## ¿Qué hace Actualizar?
 
-**Recargar** genera exactamente una orden
+**Actualizar** genera exactamente una orden
 \`RELOAD<TAB>provider<TAB>session<TAB>-<LF>\` por el túnel SSH.
 
 1. La T160 abre una transacción SQLite y lee de nuevo el título,
@@ -40,11 +40,33 @@ confirmación obligatoria.
 5. La acción **no** vuelve a enviar \`ASK\`, no consulta OpenAI/Anthropic,
    no realiza un reintento y no causa cargos de API.
 
-Recargar **no es sincronización con los sitios web de ChatGPT/Claude**.
+Actualizar **no es sincronización con los sitios web de ChatGPT/Claude**.
 El catálogo sólo contiene las sesiones propias de Surf AI guardadas
 en la T160. Mientras una respuesta está en curso, una recarga desde otra
 sesión puede mostrar los mensajes ya guardados junto al estado amarillo,
 pero no forzará una segunda ejecución del modelo.
+
+## Continuidad entre múltiples clientes
+
+Cuando dos clientes de Surf AI comparten el **mismo identificador de
+conversación, proveedor y base de datos en la T160**, SQLite es la fuente
+autoritativa. Si el cliente B continúa esa conversación y el cliente A
+pulsa **Actualizar**, A recibe los mensajes más recientes ya almacenados,
+el título y el estado actual, sin duplicar mensajes ni volver a ejecutar
+la consulta.
+
+La siguiente consulta del cliente A utiliza el contexto recuperado
+directamente de SQLite por el puente; **no depende de una copia
+desactualizada del visor**. El cliente sólo muestra cinco mensajes
+por página, pero los anteriores permanecen almacenados y el puente
+incorpora hasta 12 pares recientes al contexto enviado al proveedor.
+
+No se sincronizan por este mecanismo las conversaciones que existan
+únicamente en la web oficial de ChatGPT, Codex o Claude. Esa función
+requiere autenticación e integración adicionales.
+
+El texto visible del menú es **Actualizar**; la orden interna sigue
+llamándose `RELOAD` por compatibilidad, sin modificar el protocolo.
 
 ## Lógica del puente T160
 
