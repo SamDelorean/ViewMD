@@ -2,22 +2,30 @@
 
 Fecha: 2026-11-18. Estado: **requisitos definidos; sin implementación completa**.
 
-## Codex mediante escritorio remoto (18-11-2026)
+## Codex: proveedor de chat nativo (18-11-2026)
 
-Por decisión del usuario, el botón **Codex** ahora inicia un cliente
-FreeRDP en una ventana independiente para controlar el escritorio
-GNOME de la T160. La funcionalidad no se integra con el catálogo de
-conversaciones GTK3 y **no ejecuta agentes automáticamente**.
-La selección previa de GPT/Claude y su transcripción permanecen intactas.
-No se utiliza el adaptador experimental Codex App Server del repositorio.
+**Contrato de interfaz vigente:** el botón **Codex** selecciona
+conversaciones del proveedor `codex` dentro de Surf AI, de manera
+independiente de `openai` (GPT) y `anthropic` (Claude). El envío
+`ASK` llega mediante SSH al puente T160 y éste utiliza Codex App
+Server y el token autorizado de ChatGPT. Las respuestas se muestran
+en el mismo panel GTK3 mediante streaming `DELTA`, con
+`HISTORY`, `LIST` y `RELOAD` disponibles.
 
-- Cliente Surface RT: `~/.local/bin/surf-codex-rdp`.
-- Acceso de menú: `surf-codex-rdp.desktop`.
-- Servidor: GNOME Remote Desktop en T160, RDP con TLS y credenciales
-  independientes. No se guarda la contraseña en Surf.
-- Comprobación de uso real en pantalla con contraseña auténtica:
-  pendiente de prueba manual.
-- Procedimiento y límites de crédito en `docs/SURF_CODEX_RDP.md`.
+**Prohibido:** sustituir este botón por escritorio remoto, ejecutar
+agentes, herramientas, comandos o cambios de archivos sin una nueva
+autorización expresa. La etapa actual es conversación de código en
+modo read-only y sin herramientas, con cuota de ChatGPT y sin API key.
+
+- Cliente GTK3 ARMv7: compilado e instalado en Surface RT.
+- T160: `SURF_CODEX_TEXT_ONLY=1` y `SURF_CODEX_MODEL=gpt-6.2-sol`.
+- Prueba real Surf → T160 → Codex: aprobada; también la
+  continuidad y actualización de conversación.
+- Al instalar se conservó abierta la instancia anterior de Surf AI
+  para no perder un borrador: cerrar y reabrir aplica el nuevo binario.
+- Referencia autorizada: `docs/SURF_CODEX_NATIVE.md`.
+- El experimento RDP anterior se cerró y su servidor quedó
+  deshabilitado (puerto 3389 cerrado).
 
 ## Objetivo principal
 
