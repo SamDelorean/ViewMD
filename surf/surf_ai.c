@@ -25,7 +25,8 @@ typedef struct {
   GtkCssProvider *reader_css;
   MarkydEditor *viewer;
   GString *transcript;
-  gchar *session;
+  gchar *session, *conversation_title;
+  gboolean new_session, mode_initialized;
   gboolean busy;
   guint render_id;
 } SurfUI;
@@ -59,6 +60,46 @@ static void schedule_render(SurfUI *ui) {
     ui->render_id = g_timeout_add(RENDER_INTERVAL_MS, do_render, ui);
 }
 
+
+static const gchar *mode_name(gint mode) {
+  static const gchar *names[] = {"GPT", "Codex", "Claude", "Claude Code"};
+  return (mode >= 0 && mode < 4) ? names[mode] : "GPT";
+}
+
+static void update_window_title(SurfUI *ui) {
+  if (!ui->window) return;
+  const gchar *name = ui->conversation_title ?
+                      ui->conversation_title : "nueva conversación";
+  gchar *title = g_strdup_printf("Surf AI - %s - %s",
+                                  name, mode_name(ui->mode));
+  gtk_window_set_title(GTK_WINDOW(ui->window), title);
+  g_free(title);
+}
+
+static void set_conversation_title(SurfUI *ui, const gchar *title) {
+  g_free(ui->conversation_title);
+  ui->conversation_title = g_strdup((title && *title) ?
+                                    title : "nueva conversación");
+  update_window_title(ui);
+}
+
+/* The status row is hidden when idle. Errors and ongoing work still show. */
+static void set_status(SurfUI *ui, const gchar *message) {
+  if (!ui->status) return;
+  gboolean visible = message && *message;
+  gtk_label_set_text(GTK_LABEL(ui->status), visible ? message : "");
+  if (visible) gtk_widget_show(ui->status);
+  else gtk_widget_hide(ui->status);
+}
+
+static void reset_conversation_view(SurfUI *ui) {
+  g_string_assign(ui->transcript, "");
+  ui->history_offset = 0;
+  if (ui->older) gtk_widget_set_sensitive(ui->older, FALSE);
+  if (ui->recent) gtk_widget_set_sensitive(ui->recent, FALSE);
+  if (ui->viewer) schedule_render(ui);
+}
+
 static gboolean refresh_after_answer(gpointer ptr);
 
 static gboolean apply_event(gpointer ptr) {
@@ -76,8 +117,7 @@ static gboolean apply_event(gpointer ptr) {
     gtk_widget_set_sensitive(ui->new_chat, TRUE);
     for (guint i = 0; i < 4; i++)
       gtk_widget_set_sensitive(ui->mode_buttons[i], TRUE);
-    gtk_label_set_text(GTK_LABEL(ui->status),
-                       ev->error ? "Error del servidor" : "Listo");
+    set_status(ui, ev->error ? "Error del servidor" : "");
     g_string_append(ui->transcript, "\n\n---\n\n");
     schedule_render(ui);
     if (!ev->error) g_idle_add(refresh_after_answer, ui);
@@ -197,19 +237,28 @@ static void on_send(GtkWidget *widget, gpointer ptr) {
     return;
   }
   if (ui->mode == 1 || ui->mode == 3) {
-    gtk_label_set_text(GTK_LABEL(ui->status),
-      "Herramienta de codigo pendiente; requiere autorizacion expresa.");
+    set_status(ui, "Herramienta de código pendiente; requiere autorización expresa.");
     g_free(prompt);
     return;
   }
   provider = ui->mode == 2 ? "anthropic" : "openai";
+
+  if (ui->new_session) {
+    gchar *short_title = g_utf8_substring(
+        prompt, 0, MIN((glong)50, g_utf8_strlen(prompt, -1)));
+    g_strdelimit(short_title, "\n\r\t", ' ');
+    g_strstrip(short_title);
+    set_conversation_title(ui, short_title);
+    ui->new_session = FALSE;
+    g_free(short_title);
+  }
 
   g_string_append_printf(ui->transcript, "### Tú\n\n%s\n\n### %s\n\n",
                          prompt, g_strcmp0(provider, "anthropic") == 0
                                        ? "Claude" : "GPT");
   schedule_render(ui);
   gtk_text_buffer_set_text(buffer, "", -1);
-  gtk_label_set_text(GTK_LABEL(ui->status), "Consultando T160...");
+  set_status(ui, "Consultando T160...");
   ui->busy = TRUE;
   gtk_widget_set_sensitive(ui->send, FALSE);
   gtk_widget_set_sensitive(ui->new_chat, FALSE);
@@ -278,7 +327,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
     }
     if (g_str_has_prefix(line, "ERROR\t")) {
       gchar *msg = decode_b64(line + 6);
-      gtk_label_set_text(GTK_LABEL(ui->status), msg);
+      set_status(ui, msg);
       g_free(msg);
       g_free(line);
       protocol_error = TRUE;
@@ -303,7 +352,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
 failed:
   result = g_strdup_printf("Sin conexión con T160: %s",
                            error ? error->message : "desconocido");
-  gtk_label_set_text(GTK_LABEL(ui->status), result);
+  set_status(ui, result);
   g_free(result);
   g_clear_error(&error);
   if (conn) g_object_unref(conn);
@@ -337,8 +386,6 @@ static void load_history(SurfUI *ui, guint offset) {
     }
   }
   g_strfreev(lines);
-  if (md->len == 0 && offset == 0)
-    g_string_append(md,"# Conversación nueva\n\nEscribe un mensaje abajo.\n");
   g_string_assign(ui->transcript, md->str);
   g_string_free(md, TRUE);
   ui->history_offset = offset;
@@ -365,6 +412,10 @@ static void on_session_selected(GtkListBox *box, GtkListBoxRow *row,
   if (!id) return;
   g_free(ui->session);
   ui->session = g_strdup(id);
+  ui->new_session = FALSE;
+  set_conversation_title(ui,
+      g_object_get_data(G_OBJECT(row), "session-title"));
+  set_status(ui, "");
   load_history(ui, 0);
 }
 
@@ -470,8 +521,11 @@ static void on_rename(GtkButton *button, gpointer ptr) {
     if (*title) {
       gchar *encoded = g_base64_encode((const guchar *)title, strlen(title));
       gchar *answer = catalog_exchange(ui, "RENAME", id, encoded);
-      if (answer && g_str_has_prefix(answer, "TITLE\t"))
+      if (answer && g_str_has_prefix(answer, "TITLE\t")) {
+        if (g_strcmp0(ui->session, id) == 0)
+          set_conversation_title(ui, title);
         load_catalog(ui, FALSE);
+      }
       g_free(answer);
       g_free(encoded);
     }
@@ -508,8 +562,10 @@ static void on_delete(GtkButton *button, gpointer ptr) {
       if (g_strcmp0(ui->session, id) == 0) {
         g_free(ui->session);
         ui->session = g_uuid_string_random();
-        g_string_assign(ui->transcript, "# Surf AI\n\nNueva conversación.\n");
-        schedule_render(ui);
+        ui->new_session = TRUE;
+        set_conversation_title(ui, "nueva conversación");
+        reset_conversation_view(ui);
+        set_status(ui, "");
       }
       load_catalog(ui, FALSE);
     }
@@ -597,17 +653,26 @@ static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
     if (ui->mode == selected) gtk_toggle_button_set_active(button, TRUE);
     return;
   }
+  gboolean changed = ui->mode_initialized && ui->mode != selected;
   ui->mode = selected;
+  ui->mode_initialized = TRUE;
   for (gint i = 0; i < 4; i++) {
     if (ui->mode_buttons[i] != GTK_WIDGET(button))
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui->mode_buttons[i]),
                                    FALSE);
   }
-  if (ui->status)
-    gtk_label_set_text(GTK_LABEL(ui->status),
-      (selected == 1 || selected == 3)
-      ? "Herramienta de codigo: integracion pendiente, sin ejecucion"
-      : "Proveedor de chat seleccionado");
+  if (changed) {
+    /* Each backend provider has a distinct catalog and context. */
+    g_free(ui->session);
+    ui->session = g_uuid_string_random();
+    ui->new_session = TRUE;
+    reset_conversation_view(ui);
+    set_conversation_title(ui, "nueva conversación");
+  } else {
+    update_window_title(ui);
+  }
+  set_status(ui, (selected == 1 || selected == 3)
+      ? "Herramienta de código: integración pendiente, sin ejecución" : "");
   if (ui->session_list && !ui->busy) load_catalog(ui, FALSE);
 }
 
@@ -664,11 +729,10 @@ static void on_new_chat(GtkWidget *widget, gpointer ptr) {
   if (ui->busy) return;
   g_free(ui->session);
   ui->session = g_uuid_string_random();
-  g_string_assign(ui->transcript,
-      "# Surf AI\n\nNueva conversación. Escribe abajo y pulsa **Ctrl+Enter**.\n\n"
-      "La Surf solo dibuja la interfaz. GPT y Claude se consultan desde la T160.\n\n---\n\n");
-  gtk_label_set_text(GTK_LABEL(ui->status), "Nueva conversación");
-  schedule_render(ui);
+  ui->new_session = TRUE;
+  set_conversation_title(ui, "nueva conversación");
+  reset_conversation_view(ui);
+  set_status(ui, "");
 }
 
 int main(int argc, char **argv) {
@@ -689,9 +753,11 @@ int main(int argc, char **argv) {
   ui.reader_font_pt = 13;
   ui.pinch_start_pt = 13;
   ui.session = g_uuid_string_random();
+  ui.conversation_title = g_strdup("nueva conversación");
+  ui.new_session = TRUE;
   ui.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_window_set_icon_name(GTK_WINDOW(ui.window), "surf-ai");
-  gtk_window_set_title(GTK_WINDOW(ui.window), "Surf AI");
+  update_window_title(&ui);
   gtk_window_set_default_size(GTK_WINDOW(ui.window), 1024, 680);
   gtk_window_maximize(GTK_WINDOW(ui.window));
   g_signal_connect(ui.window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
@@ -831,8 +897,9 @@ int main(int argc, char **argv) {
   gtk_box_pack_end(GTK_BOX(bottom), ui.send, FALSE, FALSE, 0);
   g_signal_connect(ui.send, "clicked", G_CALLBACK(on_send), &ui);
 
-  ui.status = gtk_label_new("T160 via tunel SSH local (127.0.0.1:8765)");
+  ui.status = gtk_label_new(NULL);
   gtk_label_set_xalign(GTK_LABEL(ui.status), 0);
+  gtk_widget_set_no_show_all(ui.status, TRUE);
   gtk_box_pack_start(GTK_BOX(main_column), ui.status, FALSE, FALSE, 0);
   on_new_chat(NULL, &ui);
   gtk_widget_show_all(ui.window);
