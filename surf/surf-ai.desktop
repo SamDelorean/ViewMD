@@ -2,7 +2,7 @@
 Type=Application
 Name=Surf AI
 Comment=Cliente gráfico GTK3 de IA mediante T160
-Exec=surf-ai
+Exec=/home/user/Projects/SurfAI/ViewMD/surf/surf-ai
 Icon=accessories-text-editor
 Terminal=false
 Categories=Network;Utility;
