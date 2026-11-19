@@ -252,6 +252,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
   GError *error = NULL;
   gchar *frame, *line, *result;
   GString *response = g_string_new("");
+  gboolean protocol_error = FALSE;
   g_socket_client_set_timeout(client, 4);
   conn = g_socket_client_connect_to_host(client, BRIDGE_HOST, BRIDGE_PORT,
                                         NULL, &error);
@@ -280,7 +281,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
       gtk_label_set_text(GTK_LABEL(ui->status), msg);
       g_free(msg);
       g_free(line);
-      g_string_truncate(response, 0);
+      protocol_error = TRUE;
       break;
     }
     gchar **parts = g_strsplit(line, "\t", 2);
@@ -294,6 +295,10 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
   g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
   g_object_unref(conn);
   g_object_unref(client);
+  if (protocol_error) {
+    g_string_free(response, TRUE);
+    return NULL;
+  }
   return g_string_free(response, FALSE);
 failed:
   result = g_strdup_printf("Sin conexión con T160: %s",
