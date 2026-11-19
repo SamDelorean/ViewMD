@@ -158,10 +158,18 @@ class Handler(socketserver.StreamRequestHandler):
                 send(self, "DONE")
                 return
             if fields[0] == b"HISTORY":
-                offset = int(fields[3].decode("ascii"))
+                arg = fields[3].decode("ascii")
+                # A trailing 'u' is for the automatic post-stream refresh:
+                # do not clear the new-response notification until user action.
+                preserve_unread = arg.endswith("u")
+                if preserve_unread:
+                    arg = arg[:-1]
+                offset = int(arg)
                 if offset < 0 or offset > MAX_STORED_MESSAGES:
                     raise ValueError("Desplazamiento fuera de rango")
                 rows, more = catalog.get_messages(provider, session, offset, PAGE_SIZE)
+                if offset == 0 and not preserve_unread:
+                    catalog.mark_seen(provider, session)
                 for role, body in rows:
                     send(self, "ITEM", role + "\t" + body)
                 send(self, "MORE", "1" if more else "0")
