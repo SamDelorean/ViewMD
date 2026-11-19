@@ -21,6 +21,11 @@ typedef struct {
   gchar *list_cursor;
   guint history_offset;
   gint mode;
+  gboolean suppress_selection;
+  gboolean keyboard_shift;
+  gint reader_font_pt, pinch_start_pt;
+  GtkWidget *keyboard_revealer, *keyboard_button;
+  GtkCssProvider *reader_css;
   MarkydEditor *viewer;
   GString *transcript;
   gchar *session;
@@ -357,13 +362,16 @@ static void on_recent(GtkButton *btn, gpointer ptr) {
 static void on_session_selected(GtkListBox *box, GtkListBoxRow *row,
                                 gpointer ptr) {
   SurfUI *ui = ptr; (void)box;
-  if (!row || ui->busy) return;
+  if (!row || ui->busy || ui->suppress_selection) return;
   const gchar *id = g_object_get_data(G_OBJECT(row), "session-id");
   if (!id) return;
   g_free(ui->session);
   ui->session = g_strdup(id);
   load_history(ui, 0);
 }
+
+static void on_row_long_press(GtkGestureLongPress *gesture,
+                              gdouble x, gdouble y, gpointer ptr);
 
 static void load_catalog(SurfUI *ui, gboolean append) {
   if (ui->busy || !ui->session_list) return;
@@ -393,6 +401,11 @@ static void load_catalog(SurfUI *ui, gboolean append) {
         gtk_widget_set_margin_top(text, 6);
         gtk_widget_set_margin_bottom(text, 6);
         gtk_container_add(GTK_CONTAINER(row), text);
+        gtk_widget_set_size_request(row, -1, 47);
+        GtkGesture *press = gtk_gesture_long_press_new(row);
+        gtk_gesture_single_set_touch_only(GTK_GESTURE_SINGLE(press), TRUE);
+        g_signal_connect(press, "pressed",
+                         G_CALLBACK(on_row_long_press), ui);
         g_object_set_data_full(G_OBJECT(row), "session-id",
                                g_strdup(fields[0]), g_free);
         gtk_list_box_insert(GTK_LIST_BOX(ui->session_list), row, -1);
@@ -469,6 +482,48 @@ static void on_delete(GtkButton *btn, gpointer ptr) {
   g_free(id);
 }
 
+/* Long touch opens contextual actions without fetching a conversation. */
+static void on_touch_rename(GtkButton *button, gpointer ptr) {
+  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button),
+                                               GTK_TYPE_POPOVER);
+  if (popover) gtk_widget_destroy(popover);
+  on_rename(button, ptr);
+}
+
+static void on_touch_delete(GtkButton *button, gpointer ptr) {
+  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button),
+                                               GTK_TYPE_POPOVER);
+  if (popover) gtk_widget_destroy(popover);
+  on_delete(button, ptr);
+}
+
+static void on_row_long_press(GtkGestureLongPress *gesture, gdouble x,
+                              gdouble y, gpointer ptr) {
+  SurfUI *ui = ptr;
+  GtkWidget *row = gtk_gesture_get_widget(GTK_GESTURE(gesture));
+  (void)x; (void)y;
+  if (!GTK_IS_LIST_BOX_ROW(row) || ui->busy) return;
+  ui->suppress_selection = TRUE;
+  gtk_list_box_select_row(GTK_LIST_BOX(ui->session_list),
+                          GTK_LIST_BOX_ROW(row));
+  ui->suppress_selection = FALSE;
+
+  GtkWidget *popover = gtk_popover_new(row);
+  GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+  GtkWidget *rename = gtk_button_new_with_label("Renombrar");
+  GtkWidget *remove = gtk_button_new_with_label("Eliminar...");
+  gtk_container_set_border_width(GTK_CONTAINER(actions), 8);
+  gtk_widget_set_size_request(rename, 130, 46);
+  gtk_widget_set_size_request(remove, 130, 46);
+  gtk_container_add(GTK_CONTAINER(popover), actions);
+  gtk_box_pack_start(GTK_BOX(actions), rename, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(actions), remove, FALSE, FALSE, 0);
+  g_signal_connect(rename, "clicked", G_CALLBACK(on_touch_rename), ui);
+  g_signal_connect(remove, "clicked", G_CALLBACK(on_touch_delete), ui);
+  gtk_widget_show_all(popover);
+  gtk_popover_popup(GTK_POPOVER(popover));
+}
+
 static gboolean refresh_after_answer(gpointer ptr) {
   SurfUI *ui = ptr;
   load_history(ui, 0);
@@ -503,6 +558,102 @@ static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
       ? "Herramienta de codigo: integracion pendiente, sin ejecucion"
       : "Proveedor de chat seleccionado");
   if (ui->session_list && !ui->busy) load_catalog(ui, FALSE);
+}
+
+/* Multitouch pinch adjusts text size without reloading conversation history. */
+static void apply_reader_font(SurfUI *ui, gint size) {
+  ui->reader_font_pt = CLAMP(size, 11, 24);
+  gchar css[90];
+  g_snprintf(css, sizeof(css), "textview { font-size: %dpt; }",
+             ui->reader_font_pt);
+  gtk_css_provider_load_from_data(ui->reader_css, css, -1, NULL);
+}
+
+static void on_zoom_begin(GtkGesture *gesture, GdkEventSequence *sequence,
+                          gpointer ptr) {
+  SurfUI *ui = ptr;
+  (void)gesture; (void)sequence;
+  ui->pinch_start_pt = ui->reader_font_pt;
+}
+
+static void on_zoom_changed(GtkGestureZoom *gesture, gdouble scale,
+                            gpointer ptr) {
+  SurfUI *ui = ptr;
+  (void)gesture;
+  gint pt = (gint)(ui->pinch_start_pt * scale + 0.5);
+  if (CLAMP(pt, 11, 24) != ui->reader_font_pt)
+    apply_reader_font(ui, pt);
+}
+
+/* Self-contained GTK3 touch keyboard. No external OSK or elevated privileges. */
+static void on_keyboard_key(GtkButton *button, gpointer ptr) {
+  SurfUI *ui = ptr;
+  const gchar *key = g_object_get_data(G_OBJECT(button), "surf-key");
+  GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(ui->input));
+  if (!key) return;
+  if (g_strcmp0(key, "BACKSPACE") == 0) {
+    GtkTextIter cursor, previous;
+    gtk_text_buffer_get_iter_at_mark(buf, &cursor,
+                                    gtk_text_buffer_get_insert(buf));
+    previous = cursor;
+    if (gtk_text_iter_backward_char(&previous))
+      gtk_text_buffer_delete(buf, &previous, &cursor);
+  } else if (g_strcmp0(key, "SHIFT") == 0) {
+    ui->keyboard_shift = !ui->keyboard_shift;
+    gtk_button_set_label(button, ui->keyboard_shift ? "Mayús ✓" : "Mayús");
+  } else {
+    const gchar *source = key;
+    if (g_strcmp0(key, "SPACE") == 0) source = " ";
+    if (g_strcmp0(key, "ENTER") == 0) source = "\n";
+    gchar *to_insert = ui->keyboard_shift ? g_utf8_strup(source, -1)
+                                         : g_strdup(source);
+    gtk_text_buffer_insert_at_cursor(buf, to_insert, -1);
+    g_free(to_insert);
+  }
+}
+
+static void add_touch_key(SurfUI *ui, GtkWidget *row,
+                          const gchar *label, const gchar *key,
+                          gboolean wide) {
+  GtkWidget *button = gtk_button_new_with_label(label);
+  gtk_widget_set_can_focus(button, FALSE);
+  gtk_widget_set_size_request(button, wide ? 110 : 44, 44);
+  g_object_set_data_full(G_OBJECT(button), "surf-key",
+                         g_strdup(key), g_free);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_keyboard_key), ui);
+  gtk_box_pack_start(GTK_BOX(row), button, wide, wide, 1);
+}
+
+static GtkWidget *create_touch_keyboard(SurfUI *ui) {
+  const gchar *rows[] = {
+    "1234567890", "qwertyuiop", "asdfghjklñ", "zxcvbnm,.-",
+    "áéíóúü¿?¡!"
+  };
+  GtkWidget *keyboard = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+  for (guint i = 0; i < G_N_ELEMENTS(rows); ++i) {
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    gtk_box_pack_start(GTK_BOX(keyboard), row, FALSE, FALSE, 0);
+    for (const gchar *p = rows[i]; *p; p = g_utf8_next_char(p)) {
+      gchar label[8];
+      gint count = g_unichar_to_utf8(g_utf8_get_char(p), label);
+      label[count] = '\0';
+      add_touch_key(ui, row, label, label, FALSE);
+    }
+  }
+  GtkWidget *controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_box_pack_start(GTK_BOX(keyboard), controls, FALSE, FALSE, 0);
+  add_touch_key(ui, controls, "Mayús", "SHIFT", TRUE);
+  add_touch_key(ui, controls, "Espacio", "SPACE", TRUE);
+  add_touch_key(ui, controls, "Borrar", "BACKSPACE", TRUE);
+  add_touch_key(ui, controls, "Intro", "ENTER", TRUE);
+  return keyboard;
+}
+
+static void on_toggle_touch_keyboard(GtkButton *button, gpointer ptr) {
+  SurfUI *ui = ptr;
+  (void)button;
+  gtk_revealer_set_reveal_child(GTK_REVEALER(ui->keyboard_revealer),
+    !gtk_revealer_get_reveal_child(GTK_REVEALER(ui->keyboard_revealer)));
 }
 
 static gboolean on_reader_key(GtkWidget *widget, GdkEventKey *event,
