@@ -13,10 +13,12 @@
 #define BRIDGE_HOST "127.0.0.1"
 #define BRIDGE_PORT 8765
 #define RENDER_INTERVAL_MS 120
+#define SIDEBAR_OPEN_PX 260
+#define SIDEBAR_CLOSED_PX 52
 
 typedef struct {
   GtkWidget *window, *input, *status, *send, *new_chat, *provider;
-  GtkWidget *sidebar, *sidebar_restore, *session_list, *scroll, *mode_buttons[4];
+  GtkWidget *sidebar, *sidebar_restore, *splitter, *session_list, *scroll, *mode_buttons[4];
   GtkWidget *load_more, *older, *recent;
   gchar *list_cursor;
   guint history_offset;
@@ -454,6 +456,7 @@ static void load_catalog(SurfUI *ui, gboolean append) {
         gtk_label_set_xalign(GTK_LABEL(text), 0);
         gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
         gtk_label_set_max_width_chars(GTK_LABEL(text), 22);
+        gtk_label_set_width_chars(GTK_LABEL(text), 1);
         gtk_widget_set_hexpand(text, TRUE);
         gtk_widget_set_margin_start(text, 7);
         gtk_widget_set_margin_end(text, 2);
@@ -640,6 +643,8 @@ static void on_toggle_sidebar(GtkButton *button, gpointer ptr) {
   (void)button;
   show_sidebar = !gtk_revealer_get_reveal_child(GTK_REVEALER(ui->sidebar));
   gtk_revealer_set_reveal_child(GTK_REVEALER(ui->sidebar), show_sidebar);
+  gtk_paned_set_position(GTK_PANED(ui->splitter),
+                         show_sidebar ? SIDEBAR_OPEN_PX : SIDEBAR_CLOSED_PX);
   /* A separate minimal menu button remains reachable when the sidebar
      is collapsed; the entire top header has been removed. */
   if (show_sidebar)
@@ -741,7 +746,7 @@ static void on_new_chat(GtkWidget *widget, gpointer ptr) {
 int main(int argc, char **argv) {
   SurfUI ui = {0};
   GtkWidget *root, *scroller, *input_scroller, *bottom;
-  GtkWidget *workspace, *sidebar_box, *main_column, *toggle;
+  GtkWidget *workspace, *nav_shell, *sidebar_box, *main_column, *toggle;
   GtkWidget *side_scroll, *history_controls;
   GtkWidget *mode_row1, *mode_row2, *sidebar_restore;
   const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
@@ -770,8 +775,16 @@ int main(int argc, char **argv) {
   gtk_container_add(GTK_CONTAINER(ui.window), root);
 
   /* The workspace occupies the full window height: no separate top bar. */
-  workspace = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  /* A paned container gives the sidebar a bounded initial allocation
+     (260 px on a 1366 px display) instead of letting nested list widgets
+     claim hundreds of unused horizontal pixels. The divider is adjustable. */
+  workspace = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  ui.splitter = workspace;
+  gtk_paned_set_wide_handle(GTK_PANED(workspace), TRUE);
   gtk_box_pack_start(GTK_BOX(root), workspace, TRUE, TRUE, 0);
+  nav_shell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_paned_pack1(GTK_PANED(workspace), nav_shell, FALSE, TRUE);
+  gtk_paned_set_position(GTK_PANED(workspace), SIDEBAR_OPEN_PX);
 
   /* Only visible when the left sidebar is hidden, so it can be reopened. */
   sidebar_restore = gtk_button_new_with_label("☰");
@@ -780,7 +793,7 @@ int main(int argc, char **argv) {
   gtk_widget_set_size_request(sidebar_restore, 48, 48);
   gtk_widget_set_valign(sidebar_restore, GTK_ALIGN_START);
   gtk_widget_set_no_show_all(sidebar_restore, TRUE);
-  gtk_box_pack_start(GTK_BOX(workspace), sidebar_restore, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(nav_shell), sidebar_restore, FALSE, FALSE, 0);
   g_signal_connect(sidebar_restore, "clicked",
                    G_CALLBACK(on_toggle_sidebar), &ui);
 
@@ -788,10 +801,12 @@ int main(int argc, char **argv) {
   gtk_revealer_set_transition_type(GTK_REVEALER(ui.sidebar),
                                    GTK_REVEALER_TRANSITION_TYPE_SLIDE_RIGHT);
   gtk_revealer_set_reveal_child(GTK_REVEALER(ui.sidebar), TRUE);
-  gtk_box_pack_start(GTK_BOX(workspace), ui.sidebar, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(nav_shell), ui.sidebar, TRUE, TRUE, 0);
 
   sidebar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
   gtk_widget_set_size_request(sidebar_box, 252, -1);
+  gtk_widget_set_hexpand(sidebar_box, FALSE);
+  gtk_widget_set_halign(sidebar_box, GTK_ALIGN_FILL);
   gtk_container_add(GTK_CONTAINER(ui.sidebar), sidebar_box);
 
   /* Row 1, left-to-right: menu, GPT, Codex. */
@@ -830,7 +845,9 @@ int main(int argc, char **argv) {
   gtk_scrolled_window_set_overlay_scrolling(
       GTK_SCROLLED_WINDOW(side_scroll), FALSE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(side_scroll),
-                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_propagate_natural_width(
+      GTK_SCROLLED_WINDOW(side_scroll), FALSE);
   gtk_box_pack_start(GTK_BOX(sidebar_box), side_scroll, TRUE, TRUE, 0);
   ui.session_list = gtk_list_box_new();
   gtk_container_add(GTK_CONTAINER(side_scroll), ui.session_list);
@@ -842,7 +859,7 @@ int main(int argc, char **argv) {
   g_signal_connect(ui.load_more,"clicked",G_CALLBACK(on_load_more),&ui);
   main_column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_widget_set_hexpand(main_column, TRUE);
-  gtk_box_pack_start(GTK_BOX(workspace), main_column, TRUE, TRUE, 6);
+  gtk_paned_pack2(GTK_PANED(workspace), main_column, TRUE, FALSE);
   scroller = gtk_scrolled_window_new(NULL, NULL);
   ui.scroll = scroller;
   gtk_scrolled_window_set_kinetic_scrolling(
