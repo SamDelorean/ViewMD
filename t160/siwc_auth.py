@@ -9,7 +9,6 @@ Docs: https://developers.openai.com/siwc/token-sharing-open-source/sign-in
 """
 import argparse
 import base64
-import contextlib
 import fcntl
 import hashlib
 import hmac
@@ -21,7 +20,6 @@ import re
 import secrets
 import stat
 import tempfile
-import threading
 import time
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -330,29 +328,29 @@ def access_token():
     lock_path = root / ".refresh.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     with os.fdopen(fd, "r+") as file:
-            fcntl.flock(file, fcntl.LOCK_EX)
-            saved = profile()
-            if not saved:
-                raise AuthError("Falta iniciar sesión con ChatGPT en la T160")
-            if SHARING_SCOPE not in saved.get("scopes", []):
-                raise AuthError("El plan de ChatGPT no está autorizado")
-            if int(saved.get("expires_at", 0)) - time.time() > 180:
-                return saved["access_token"]
-            tokens = _request_json(TOKEN_URL, {
-                "grant_type": "refresh_token",
-                "client_id": saved["client_id"],
-                "refresh_token": saved["refresh_token"],
-                "resource": RESOURCE,
-            })
-            if tokens.get("id_token"):
-                identity = validate_id_token(
-                    tokens["id_token"], saved["client_id"])
-            else:
-                identity = {"sub": saved["subject"],
-                            "email": saved.get("email", "")}
-            updated = _record(tokens, saved["client_id"], identity, saved)
-            _private_write(_profile_path(), updated)
-            return updated["access_token"]
+        fcntl.flock(file, fcntl.LOCK_EX)
+        saved = profile()
+        if not saved:
+            raise AuthError("Falta iniciar sesión con ChatGPT en la T160")
+        if SHARING_SCOPE not in saved.get("scopes", []):
+            raise AuthError("El plan de ChatGPT no está autorizado")
+        if int(saved.get("expires_at", 0)) - time.time() > 180:
+            return saved["access_token"]
+        tokens = _request_json(TOKEN_URL, {
+            "grant_type": "refresh_token",
+            "client_id": saved["client_id"],
+            "refresh_token": saved["refresh_token"],
+            "resource": RESOURCE,
+        })
+        if tokens.get("id_token"):
+            identity = validate_id_token(
+                tokens["id_token"], saved["client_id"])
+        else:
+            identity = {"sub": saved["subject"],
+                        "email": saved.get("email", "")}
+        updated = _record(tokens, saved["client_id"], identity, saved)
+        _private_write(_profile_path(), updated)
+        return updated["access_token"]
 
 
 def list_models():
