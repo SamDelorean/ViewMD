@@ -504,7 +504,7 @@ static void on_touch_delete(GtkButton *button, gpointer ptr) {
 static void on_row_long_press(GtkGestureLongPress *gesture, gdouble x,
                               gdouble y, gpointer ptr) {
   SurfUI *ui = ptr;
-  GtkWidget *row = gtk_gesture_get_widget(GTK_GESTURE(gesture));
+  GtkWidget *row = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
   (void)x; (void)y;
   if (!GTK_IS_LIST_BOX_ROW(row) || ui->busy) return;
   ui->suppress_selection = TRUE;
