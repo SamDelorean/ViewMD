@@ -283,9 +283,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
     }
     gchar **parts = g_strsplit(line, "\t", 2);
     if (parts[0] && parts[1]) {
-      gchar *decoded = decode_b64(parts[1]);
-      g_string_append_printf(response, "%s\t%s\n", parts[0], decoded);
-      g_free(decoded);
+      g_string_append_printf(response, "%s\t%s\n", parts[0], parts[1]);
     }
     g_strfreev(parts);
     g_free(line);
@@ -322,13 +320,18 @@ static void load_history(SurfUI *ui, guint offset) {
   gchar **lines = g_strsplit(reply, "\n", -1);
   for (guint i = 0; lines[i]; i++) {
     if (g_str_has_prefix(lines[i], "ITEM\t")) {
-      gchar *body = lines[i]+5;
+      gchar *body = decode_b64(lines[i]+5);
       if (g_str_has_prefix(body, "user\t")) {
         g_string_append_printf(md, "### Tú\n\n%s\n\n---\n\n", body+5);
       } else if (g_str_has_prefix(body, "assistant\t")) {
         g_string_append_printf(md, "### Asistente\n\n%s\n\n---\n\n", body+10);
       }
-    } else if (g_strcmp0(lines[i], "MORE\t1") == 0) more = TRUE;
+      g_free(body);
+    } else if (g_str_has_prefix(lines[i], "MORE\t")) {
+      gchar *value = decode_b64(lines[i]+5);
+      more = g_strcmp0(value, "1") == 0;
+      g_free(value);
+    }
   }
   g_strfreev(lines);
   if (md->len == 0 && offset == 0)
@@ -378,7 +381,8 @@ static void load_catalog(SurfUI *ui, gboolean append) {
   gboolean more = FALSE;
   for (guint i = 0; lines[i]; i++) {
     if (g_str_has_prefix(lines[i], "SESSION\t")) {
-      gchar **fields = g_strsplit(lines[i]+8, "\t", 3);
+      gchar *decoded = decode_b64(lines[i]+8);
+      gchar **fields = g_strsplit(decoded, "\t", 3);
       if (fields[0] && fields[1] && fields[2]) {
         GtkWidget *row = gtk_list_box_row_new();
         GtkWidget *text = gtk_label_new(fields[2]);
@@ -394,9 +398,10 @@ static void load_catalog(SurfUI *ui, gboolean append) {
         gtk_list_box_insert(GTK_LIST_BOX(ui->session_list), row, -1);
       }
       g_strfreev(fields);
+      g_free(decoded);
     } else if (g_str_has_prefix(lines[i], "NEXT\t")) {
       g_free(ui->list_cursor);
-      ui->list_cursor = g_strdup(lines[i]+5);
+      ui->list_cursor = decode_b64(lines[i]+5);
       more = g_strcmp0(ui->list_cursor, "-") != 0;
     }
   }
