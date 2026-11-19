@@ -9,6 +9,24 @@ posible a ChatGPT, Codex y Claude, sin navegador pesado en Surface.
 T160 mantiene sesiones, herramientas, modelos y archivos. La continuidad real
 de proyectos y conversaciones tiene prioridad sobre el simple chat.
 
+## Navegación superior (decisión del usuario)
+
+La barra superior contiene cuatro botones independientes, visibles en todo
+momento: **GPT**, **Codex**, **Claude** y **Claude Code**. Claude Code es el
+agente de programación oficial de Anthropic; Claude identifica el chat general.
+
+Cambiar pestañas cambia el contexto de interfaz pero **no ejecuta** herramientas.
+Codex y Claude Code tienen sus propios paneles de tareas, archivos, diffs,
+aprobaciones, terminal/logs y reanudación de trabajos, por implementar.
+
+El panel izquierdo se despliega o se oculta con el botón de menú. El área
+principal conserva la caja de entrada abajo y navegación vertical por barra
+de desplazamiento o teclas Arriba/Abajo y RePág/AvPág.
+
+Estado: estructura GTK3 incorporada en fuentes. La lista remota de
+conversaciones, herramientas y su ejecución NO están conectadas todavía.
+La integración de agentes sigue requiriendo aprobación explícita.
+
 ## Pantalla principal
 
 1. Panel lateral de conversaciones y proyectos: buscar, seleccionar, retomar,
