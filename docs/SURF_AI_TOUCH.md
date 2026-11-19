@@ -17,15 +17,14 @@ plegable y conversación principal a la derecha.
 | Pulsación prolongada | GtkGestureLongPress, menú Renombrar / Eliminar |
 | Borrado | Diálogo modal con confirmación explícita |
 | Pinza de dos dedos | GtkGestureZoom y CSS para fuente de 11 a 24 pt |
-| Teclado virtual | Teclado GTK3 integrado, oculto al inicio |
-| Idioma y símbolos | Números, letras, ñ, áéíóúü, puntuación y símbolos de código |
-| Teclas especiales | Mayús, Espacio, Borrar, Intro |
+| Entrada de texto | Campo GTK3 compatible con teclado físico y teclado en pantalla de postmarketOS/XFCE4 |
 | Botones | Altura táctil aproximada de 44–48 px |
 | Teclado/ratón | Flechas, RePág/AvPág, Ctrl+Enter, clics, sin cambios |
 
-El teclado integrado aparece sólo al pulsar el botón "⌨ Teclado".
-No depende de Onboard, no ejecuta procesos externos y no necesita
-privilegios. No reemplaza un teclado completo del sistema operativo.
+El botón "⌨ Teclado" y el teclado integrado de Surf AI se eliminaron
+del código del cliente. La entrada utiliza el teclado de pantalla propio
+de la Surf (Onboard está instalado). No se modifica su configuración;
+se conserva el campo GTK3 estándar para recibir el texto.
 
 La pulsación prolongada sólo abre el menú; no modifica ni elimina nada
 sin una acción adicional del usuario. La eliminación requiere confirmación.
@@ -46,7 +45,7 @@ Comprueba dispositivos de entrada y xinput si ya estuviera instalado.
 3. Arrastrar verticalmente con un dedo en historial y lista de conversaciones.
 4. Mantener pulsado un título y abrir Renombrar/Eliminar; cancelar borrado.
 5. Probar pinza de dos dedos y comprobar cambio de fuente sin recargar mensajes.
-6. Mostrar el teclado, introducir caracteres españoles y borrar texto.
+6. Enfocar el cuadro de entrada y utilizar el teclado en pantalla del sistema para escribir caracteres españoles y borrar texto.
 7. Probar teclado físico, flechas, RePág/AvPág, Ctrl+Enter y ratón.
 8. Revisar distribución a 1366×768 y que el teclado no oculte la entrada.
 9. Verificar fluidez y RAM con ventana de cinco mensajes y lista de 20.
@@ -57,7 +56,7 @@ Comprueba dispositivos de entrada y xinput si ya estuviera instalado.
   ID_INPUT_TOUCHSCREEN=1 (Atmel hid-over-i2c 03EB:8207), área 227 x 132 mm.
   Su presencia está confirmada; el reconocimiento de gestos requiere prueba manual.
 - El comportamiento de pinza y pulsación prolongada necesita prueba física.
-- El teclado integrado es básico, sin predicción ni autocorrección.
+- La funcionalidad del teclado en pantalla depende de su configuración en postmarketOS/XFCE4; Surf AI ya no incorpora teclado propio.
 - Cambios incorporados a la rama surf-ai-client en GitHub.
 - **Compilación e instalación validadas en Surf**, exclusivamente con
   nice -n 10 y make -j1, sin compilar en T160.
@@ -71,8 +70,8 @@ Comprueba dispositivos de entrada y xinput si ya estuviera instalado.
   /home/user/Projects/SurfAI/ViewMD/surf/surf-ai.
 - Logs: ~/Projects/SurfAI/surf-touch-build2.log y surf-touch-smoke2.log.
 - La inspección táctil confirmó udev ID_INPUT_TOUCHSCREEN=1; no se
-  ha simulado o medido contacto físico real. Teclado virtual Onboard
-  ya está instalado; Surf AI también dispone del propio.
+  ha simulado o medido contacto físico real. Onboard está instalado
+  en la Surf y será el único teclado virtual previsto.
 - La revisión de fuentes no utilizó Codex ni Commander. La compilación y
   las auditorías de esta sesión usaron Commander con autorización puntual.
 - No se tocó kernel, arranque, firmware, DTB ni drivers.
@@ -94,3 +93,14 @@ No activar servicios, supervisión continua o autorun.
 - No se alteraron kernel, controladores, servicios, Device Tree ni particiones.
 - Pendiente validación manual de toque, deslizamiento cinético, pinza y
   menú de pulsación prolongada; una prueba de arranque no los acredita.
+
+## Ajuste de interfaz posterior
+
+- Eliminados del código fuente el botón «⌨ Teclado», el panel de teclado GTK3
+  y sus funciones de manejo.
+- Se preservan los gestos táctiles, el zoom, la barra lateral, la entrada
+  de texto y el botón «Enviar».
+- Este cambio de fuente está en GitHub. **La compilación e instalación
+  anteriores de ccf697c no incluyen todavía esta eliminación.**
+- Para sustituir el binario instalado en la Surf será necesaria una nueva
+  compilación ARMv7 con los permisos operativos correspondientes.
