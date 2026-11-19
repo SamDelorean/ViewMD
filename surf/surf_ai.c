@@ -17,6 +17,9 @@
 typedef struct {
   GtkWidget *window, *input, *status, *send, *new_chat, *provider;
   GtkWidget *sidebar, *session_list, *scroll, *mode_buttons[4];
+  GtkWidget *load_more, *older, *recent, *rename_button, *delete_button;
+  gchar *list_cursor;
+  guint history_offset;
   gint mode;
   MarkydEditor *viewer;
   GString *transcript;
@@ -54,6 +57,8 @@ static void schedule_render(SurfUI *ui) {
     ui->render_id = g_timeout_add(RENDER_INTERVAL_MS, do_render, ui);
 }
 
+static gboolean refresh_after_answer(gpointer ptr);
+
 static gboolean apply_event(gpointer ptr) {
   UiEvent *ev = ptr;
   SurfUI *ui = ev->ui;
@@ -73,6 +78,7 @@ static gboolean apply_event(gpointer ptr) {
                        ev->error ? "Error del servidor" : "Listo");
     g_string_append(ui->transcript, "\n\n---\n\n");
     schedule_render(ui);
+    if (!ev->error) g_idle_add(refresh_after_answer, ui);
   }
   g_free(ev->text);
   g_free(ev);
@@ -228,6 +234,243 @@ static gboolean on_input_key(GtkWidget *widget, GdkEventKey *event,
   return FALSE;
 }
 
+
+/* v0.2 catalog: only compact metadata travels to Surf; max 20 rows/page.
+   A catalog operation is user-initiated, bounded to 4 seconds. */
+static const gchar *selected_provider(SurfUI *ui) {
+  return ui->mode == 2 || ui->mode == 3 ? "anthropic" : "openai";
+}
+
+static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
+                               const gchar *session, const gchar *payload) {
+  GSocketClient *client = g_socket_client_new();
+  GSocketConnection *conn;
+  GDataInputStream *input;
+  GOutputStream *output;
+  GError *error = NULL;
+  gchar *frame, *line, *result;
+  GString *response = g_string_new("");
+  g_socket_client_set_timeout(client, 4);
+  conn = g_socket_client_connect_to_host(client, BRIDGE_HOST, BRIDGE_PORT,
+                                        NULL, &error);
+  if (!conn) goto failed;
+  frame = g_strdup_printf("%s\t%s\t%s\t%s\n", op, selected_provider(ui),
+                           session ? session : ui->session,
+                           payload ? payload : "-");
+  output = g_io_stream_get_output_stream(G_IO_STREAM(conn));
+  if (!g_output_stream_write_all(output, frame, strlen(frame), NULL,
+                                  NULL, &error) ||
+      !g_output_stream_flush(output, NULL, &error)) {
+    g_free(frame);
+    goto failed;
+  }
+  g_free(frame);
+  input = g_data_input_stream_new(
+      g_io_stream_get_input_stream(G_IO_STREAM(conn)));
+  g_data_input_stream_set_newline_type(input, G_DATA_STREAM_NEWLINE_TYPE_LF);
+  while ((line = g_data_input_stream_read_line(input,NULL,NULL,&error))) {
+    if (g_strcmp0(line, "DONE") == 0) {
+      g_free(line);
+      break;
+    }
+    if (g_str_has_prefix(line, "ERROR\t")) {
+      gchar *msg = decode_b64(line + 6);
+      gtk_label_set_text(GTK_LABEL(ui->status), msg);
+      g_free(msg);
+      g_free(line);
+      g_string_truncate(response, 0);
+      break;
+    }
+    gchar **parts = g_strsplit(line, "\t", 2);
+    if (parts[0] && parts[1]) {
+      gchar *decoded = decode_b64(parts[1]);
+      g_string_append_printf(response, "%s\t%s\n", parts[0], decoded);
+      g_free(decoded);
+    }
+    g_strfreev(parts);
+    g_free(line);
+  }
+  g_object_unref(input);
+  g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
+  g_object_unref(conn);
+  g_object_unref(client);
+  return g_string_free(response, FALSE);
+failed:
+  result = g_strdup_printf("Sin conexión con T160: %s",
+                           error ? error->message : "desconocido");
+  gtk_label_set_text(GTK_LABEL(ui->status), result);
+  g_free(result);
+  g_clear_error(&error);
+  if (conn) g_object_unref(conn);
+  g_object_unref(client);
+  g_string_free(response, TRUE);
+  return NULL;
+}
+
+static GtkListBoxRow *selected_row(SurfUI *ui) {
+  return gtk_list_box_get_selected_row(GTK_LIST_BOX(ui->session_list));
+}
+
+static void load_history(SurfUI *ui, guint offset) {
+  if (ui->busy) return;
+  gchar *number = g_strdup_printf("%u", offset);
+  gchar *reply = catalog_exchange(ui, "HISTORY", ui->session, number);
+  g_free(number);
+  if (!reply) return;
+  GString *md = g_string_new("");
+  gboolean more = FALSE;
+  gchar **lines = g_strsplit(reply, "\n", -1);
+  for (guint i = 0; lines[i]; i++) {
+    if (g_str_has_prefix(lines[i], "ITEM\t")) {
+      gchar *body = lines[i]+5;
+      if (g_str_has_prefix(body, "user\t")) {
+        g_string_append_printf(md, "### Tú\n\n%s\n\n---\n\n", body+5);
+      } else if (g_str_has_prefix(body, "assistant\t")) {
+        g_string_append_printf(md, "### Asistente\n\n%s\n\n---\n\n", body+10);
+      }
+    } else if (g_strcmp0(lines[i], "MORE\t1") == 0) more = TRUE;
+  }
+  g_strfreev(lines);
+  if (md->len == 0 && offset == 0)
+    g_string_append(md,"# Conversación nueva\n\nEscribe un mensaje abajo.\n");
+  g_string_assign(ui->transcript, md->str);
+  g_string_free(md, TRUE);
+  ui->history_offset = offset;
+  gtk_widget_set_sensitive(ui->older, more);
+  gtk_widget_set_sensitive(ui->recent, offset > 0);
+  schedule_render(ui);
+  g_free(reply);
+}
+
+static void on_older(GtkButton *btn, gpointer ptr) {
+  SurfUI *ui = ptr; (void)btn;
+  load_history(ui, ui->history_offset + 5);
+}
+static void on_recent(GtkButton *btn, gpointer ptr) {
+  SurfUI *ui = ptr; (void)btn;
+  load_history(ui, 0);
+}
+
+static void on_session_selected(GtkListBox *box, GtkListBoxRow *row,
+                                gpointer ptr) {
+  SurfUI *ui = ptr; (void)box;
+  if (!row || ui->busy) return;
+  const gchar *id = g_object_get_data(G_OBJECT(row), "session-id");
+  if (!id) return;
+  g_free(ui->session);
+  ui->session = g_strdup(id);
+  load_history(ui, 0);
+}
+
+static void load_catalog(SurfUI *ui, gboolean append) {
+  if (ui->busy || !ui->session_list) return;
+  if (!append) {
+    GList *children = gtk_container_get_children(GTK_CONTAINER(ui->session_list));
+    for (GList *it = children; it; it = it->next)
+      gtk_widget_destroy(GTK_WIDGET(it->data));
+    g_list_free(children);
+    g_clear_pointer(&ui->list_cursor, g_free);
+  }
+  gchar *reply = catalog_exchange(ui, "LIST", ui->session,
+                                   ui->list_cursor ? ui->list_cursor : "-");
+  if (!reply) return;
+  gchar **lines = g_strsplit(reply, "\n", -1);
+  gboolean more = FALSE;
+  for (guint i = 0; lines[i]; i++) {
+    if (g_str_has_prefix(lines[i], "SESSION\t")) {
+      gchar **fields = g_strsplit(lines[i]+8, "\t", 3);
+      if (fields[0] && fields[1] && fields[2]) {
+        GtkWidget *row = gtk_list_box_row_new();
+        GtkWidget *text = gtk_label_new(fields[2]);
+        gtk_label_set_xalign(GTK_LABEL(text), 0);
+        gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
+        gtk_widget_set_margin_start(text, 5);
+        gtk_widget_set_margin_end(text, 5);
+        gtk_widget_set_margin_top(text, 6);
+        gtk_widget_set_margin_bottom(text, 6);
+        gtk_container_add(GTK_CONTAINER(row), text);
+        g_object_set_data_full(G_OBJECT(row), "session-id",
+                               g_strdup(fields[0]), g_free);
+        gtk_list_box_insert(GTK_LIST_BOX(ui->session_list), row, -1);
+      }
+      g_strfreev(fields);
+    } else if (g_str_has_prefix(lines[i], "NEXT\t")) {
+      g_free(ui->list_cursor);
+      ui->list_cursor = g_strdup(lines[i]+5);
+      more = g_strcmp0(ui->list_cursor, "-") != 0;
+    }
+  }
+  g_strfreev(lines);
+  g_free(reply);
+  gtk_widget_show_all(ui->session_list);
+  gtk_widget_set_sensitive(ui->load_more, more);
+}
+
+static void on_load_more(GtkButton *btn, gpointer ptr) {
+  (void)btn; load_catalog(ptr, TRUE);
+}
+
+static void on_rename(GtkButton *btn, gpointer ptr) {
+  SurfUI *ui = ptr; (void)btn;
+  GtkListBoxRow *row = selected_row(ui);
+  if (!row || ui->busy) return;
+  const gchar *id = g_object_get_data(G_OBJECT(row), "session-id");
+  GtkWidget *dialog = gtk_dialog_new_with_buttons(
+      "Renombrar conversación", GTK_WINDOW(ui->window), GTK_DIALOG_MODAL,
+      "_Cancelar", GTK_RESPONSE_CANCEL, "_Guardar", GTK_RESPONSE_OK, NULL);
+  GtkWidget *entry = gtk_entry_new();
+  gtk_entry_set_max_length(GTK_ENTRY(entry), 100);
+  gtk_entry_set_text(GTK_ENTRY(entry), "Conversación");
+  gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(
+                        GTK_DIALOG(dialog))), entry);
+  gtk_widget_show_all(dialog);
+  if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) {
+    const gchar *title = gtk_entry_get_text(GTK_ENTRY(entry));
+    if (*title) {
+      gchar *encoded = g_base64_encode((const guchar *)title, strlen(title));
+      gchar *answer = catalog_exchange(ui, "RENAME", id, encoded);
+      g_free(answer);
+      g_free(encoded);
+      load_catalog(ui, FALSE);
+    }
+  }
+  gtk_widget_destroy(dialog);
+}
+
+static void on_delete(GtkButton *btn, gpointer ptr) {
+  SurfUI *ui = ptr; (void)btn;
+  GtkListBoxRow *row = selected_row(ui);
+  if (!row || ui->busy) return;
+  gchar *id = g_strdup(g_object_get_data(G_OBJECT(row), "session-id"));
+  GtkWidget *dialog = gtk_message_dialog_new(
+      GTK_WINDOW(ui->window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING,
+      GTK_BUTTONS_NONE, "¿Eliminar esta conversación?");
+  gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog),
+      "Se ocultará del listado. Esta acción requiere confirmación.");
+  gtk_dialog_add_buttons(GTK_DIALOG(dialog), "_Cancelar", GTK_RESPONSE_CANCEL,
+                         "_Eliminar", GTK_RESPONSE_ACCEPT, NULL);
+  if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+    gchar *answer = catalog_exchange(ui, "DELETE", id, "-");
+    g_free(answer);
+    if (g_strcmp0(ui->session, id) == 0) {
+      g_free(ui->session);
+      ui->session = g_uuid_string_random();
+      g_string_assign(ui->transcript, "# Surf AI\n\nNueva conversación.\n");
+      schedule_render(ui);
+    }
+    load_catalog(ui, FALSE);
+  }
+  gtk_widget_destroy(dialog);
+  g_free(id);
+}
+
+static gboolean refresh_after_answer(gpointer ptr) {
+  SurfUI *ui = ptr;
+  load_history(ui, 0);
+  load_catalog(ui, FALSE);
+  return G_SOURCE_REMOVE;
+}
+
 static void on_toggle_sidebar(GtkButton *button, gpointer ptr) {
   SurfUI *ui = ptr;
   (void)button;
@@ -253,6 +496,7 @@ static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
     (selected == 1 || selected == 3)
     ? "Herramienta de codigo: integracion pendiente, sin ejecucion"
     : "Proveedor de chat seleccionado");
+  if (ui->session_list && !ui->busy) load_catalog(ui, FALSE);
 }
 
 static gboolean on_reader_key(GtkWidget *widget, GdkEventKey *event,
@@ -294,6 +538,7 @@ int main(int argc, char **argv) {
   SurfUI ui = {0};
   GtkWidget *root, *header, *scroller, *input_scroller, *bottom, *label;
   GtkWidget *workspace, *sidebar_box, *main_column, *toggle;
+  GtkWidget *side_scroll, *side_controls, *history_controls;
   const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
   gtk_init(&argc, &argv);
   config = config_new();
@@ -344,11 +589,28 @@ int main(int argc, char **argv) {
   ui.new_chat = gtk_button_new_with_label("+ Nueva conversación");
   gtk_box_pack_start(GTK_BOX(sidebar_box), ui.new_chat, FALSE, FALSE, 4);
   g_signal_connect(ui.new_chat, "clicked", G_CALLBACK(on_new_chat), &ui);
-  label = gtk_label_new("Conversaciones (historial remoto pendiente)");
+  label = gtk_label_new("Conversaciones · recientes primero");
   gtk_label_set_xalign(GTK_LABEL(label), 0);
   gtk_box_pack_start(GTK_BOX(sidebar_box), label, FALSE, FALSE, 4);
+  side_scroll = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(side_scroll),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_box_pack_start(GTK_BOX(sidebar_box), side_scroll, TRUE, TRUE, 0);
   ui.session_list = gtk_list_box_new();
-  gtk_box_pack_start(GTK_BOX(sidebar_box), ui.session_list, TRUE, TRUE, 0);
+  gtk_container_add(GTK_CONTAINER(side_scroll), ui.session_list);
+  g_signal_connect(ui.session_list, "row-selected",
+                   G_CALLBACK(on_session_selected), &ui);
+  ui.load_more = gtk_button_new_with_label("Cargar 20 más");
+  gtk_box_pack_start(GTK_BOX(sidebar_box), ui.load_more, FALSE, FALSE, 0);
+  g_signal_connect(ui.load_more,"clicked",G_CALLBACK(on_load_more),&ui);
+  side_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_box_pack_start(GTK_BOX(sidebar_box), side_controls, FALSE, FALSE, 2);
+  ui.rename_button = gtk_button_new_with_label("Renombrar");
+  ui.delete_button = gtk_button_new_with_label("Eliminar");
+  gtk_box_pack_start(GTK_BOX(side_controls),ui.rename_button,TRUE,TRUE,0);
+  gtk_box_pack_start(GTK_BOX(side_controls),ui.delete_button,TRUE,TRUE,0);
+  g_signal_connect(ui.rename_button,"clicked",G_CALLBACK(on_rename),&ui);
+  g_signal_connect(ui.delete_button,"clicked",G_CALLBACK(on_delete),&ui);
   g_signal_connect(toggle, "clicked", G_CALLBACK(on_toggle_sidebar), &ui);
 
   main_column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
@@ -364,6 +626,16 @@ int main(int argc, char **argv) {
                     markyd_editor_get_widget(ui.viewer));
   g_signal_connect(ui.viewer->text_view, "key-press-event",
                    G_CALLBACK(on_reader_key), &ui);
+  history_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_box_pack_start(GTK_BOX(main_column),history_controls,FALSE,FALSE,0);
+  ui.older = gtk_button_new_with_label("Mensajes anteriores");
+  ui.recent = gtk_button_new_with_label("Volver a recientes");
+  gtk_box_pack_start(GTK_BOX(history_controls),ui.older,FALSE,FALSE,0);
+  gtk_box_pack_start(GTK_BOX(history_controls),ui.recent,FALSE,FALSE,0);
+  gtk_widget_set_sensitive(ui.older,FALSE);
+  gtk_widget_set_sensitive(ui.recent,FALSE);
+  g_signal_connect(ui.older,"clicked",G_CALLBACK(on_older),&ui);
+  g_signal_connect(ui.recent,"clicked",G_CALLBACK(on_recent),&ui);
   bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_box_pack_start(GTK_BOX(main_column), bottom, FALSE, FALSE, 0);
   input_scroller = gtk_scrolled_window_new(NULL, NULL);
@@ -384,6 +656,7 @@ int main(int argc, char **argv) {
   gtk_box_pack_start(GTK_BOX(main_column), ui.status, FALSE, FALSE, 0);
   on_new_chat(NULL, &ui);
   gtk_widget_show_all(ui.window);
+  load_catalog(&ui, FALSE);
   gtk_widget_grab_focus(ui.input);
   gtk_main();
   /* Background worker is intentionally owned by the process until exit. */
