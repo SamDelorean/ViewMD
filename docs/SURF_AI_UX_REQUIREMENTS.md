@@ -87,6 +87,33 @@ No se cambia el botón «Enviar», la barra lateral ni la paginación.
 esta revisión en la Surf. El acceso remoto/compilación sigue requiriendo
 autorización específica. No se utilizó Codex ni Commander.
 
+### Menú «⋯» circular como semáforo y recarga (ajuste actual)
+
+El botón discreto «⋯» de cada conversación pasa a ser un **círculo
+de 38 px**. Su propio fondo indica el estado: **gris** en reposo o
+consultada; **amarillo oscilante** mientras la T160 procesa; **verde**
+para una respuesta nueva completa; **rojo** ante un fallo. No se añade
+ningún indicador separado ni se pierde ancho del título.
+
+El botón conserva el menú contextual, ahora con tres acciones:
+**Recargar, Renombrar, Eliminar**. Recargar fuerza la lectura de la
+conversación persistida en la T160 y reemplaza la ventana de cinco
+mensajes en la Surf. **No repite el mensaje a GPT ni Claude** y no
+sincroniza conversaciones alojadas en las páginas web de los proveedores.
+
+Las actualizaciones de estado se obtienen con las operaciones del
+usuario y al terminar una respuesta. La animación amarilla usa únicamente
+un temporizador GTK local, sin supervisión continua ni consultas
+periódicas a la T160.
+
+Contrato técnico, estados, compatibilidad y límites en
+`docs/SURF_AI_RELOAD_STATUS.md`.
+
+**Estado:** rama `surf-ai-client` actualizada; pruebas añadidas
+pero todavía sin ejecutar en las máquinas. Pendiente de instalar el
+nuevo bridge en T160 y recompilar el cliente nativo en Surf con
+autorización expresa de Commander. No se ha usado Codex.
+
 ### Botón «⋯» por conversación (ajuste táctil)
 
 El toque prolongado no respondió de manera fiable en la Surf.
