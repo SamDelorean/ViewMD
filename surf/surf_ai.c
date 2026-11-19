@@ -438,7 +438,10 @@ static void on_rename(GtkButton *btn, gpointer ptr) {
       "_Cancelar", GTK_RESPONSE_CANCEL, "_Guardar", GTK_RESPONSE_OK, NULL);
   GtkWidget *entry = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(entry), 100);
-  gtk_entry_set_text(GTK_ENTRY(entry), "Conversación");
+  GtkWidget *row_text = gtk_bin_get_child(GTK_BIN(row));
+  gtk_entry_set_text(GTK_ENTRY(entry),
+    GTK_IS_LABEL(row_text) ? gtk_label_get_text(GTK_LABEL(row_text))
+                           : "Conversación");
   gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(
                         GTK_DIALOG(dialog))), entry);
   gtk_widget_show_all(dialog);
@@ -464,7 +467,8 @@ static void on_delete(GtkButton *btn, gpointer ptr) {
       GTK_WINDOW(ui->window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING,
       GTK_BUTTONS_NONE, "¿Eliminar esta conversación?");
   gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog),
-      "Se ocultará del listado. Esta acción requiere confirmación.");
+      "Se eliminarán de Surf AI esta conversación y sus mensajes. "
+      "No se puede deshacer.");
   gtk_dialog_add_buttons(GTK_DIALOG(dialog), "_Cancelar", GTK_RESPONSE_CANCEL,
                          "_Eliminar", GTK_RESPONSE_ACCEPT, NULL);
   if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
@@ -627,11 +631,12 @@ static void add_touch_key(SurfUI *ui, GtkWidget *row,
 static GtkWidget *create_touch_keyboard(SurfUI *ui) {
   const gchar *rows[] = {
     "1234567890", "qwertyuiop", "asdfghjklñ", "zxcvbnm,.-",
-    "áéíóúü¿?¡!"
+    "áéíóúü¿?¡!", "<>()[]{}=+_/"
   };
   GtkWidget *keyboard = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
   for (guint i = 0; i < G_N_ELEMENTS(rows); ++i) {
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    gtk_widget_set_halign(row, GTK_ALIGN_CENTER);
     gtk_box_pack_start(GTK_BOX(keyboard), row, FALSE, FALSE, 0);
     for (const gchar *p = rows[i]; *p; p = g_utf8_next_char(p)) {
       gchar label[8];
@@ -641,6 +646,7 @@ static GtkWidget *create_touch_keyboard(SurfUI *ui) {
     }
   }
   GtkWidget *controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_widget_set_halign(controls, GTK_ALIGN_CENTER);
   gtk_box_pack_start(GTK_BOX(keyboard), controls, FALSE, FALSE, 0);
   add_touch_key(ui, controls, "Mayús", "SHIFT", TRUE);
   add_touch_key(ui, controls, "Espacio", "SPACE", TRUE);
