@@ -51,6 +51,42 @@ por página, ordenados por actividad más reciente.
 Cambio incorporado a GitHub; todavía no recompilado ni instalado en la
 Surface RT. No autoriza uso adicional de Commander o Codex.
 
+### Título dinámico de ventana y recuperación de altura (ajuste posterior)
+
+El panel derecho de conversación ya no presenta el texto de bienvenida
+«Nueva conversación» ni la leyenda permanente de estado al pie.
+Cuando la conversación aún está vacía, el visor de mensajes queda
+realmente vacío. El estado del cliente permanece oculto cuando está
+inactivo; sólo aparece para consultas en curso, fallos o avisos
+relevantes.
+
+El título nativo de la ventana GTK3 sigue el patrón exacto:
+
+`Surf AI - <nombre de conversación> - <herramienta>`
+
+Ejemplo: `Surf AI - nueva conversación - GPT`.
+
+- Al pulsar «Nueva conversación», se muestra el título anterior y
+  se limpia el visor sin consumir una fila adicional.
+- Al seleccionar un título de la lista, el título de ventana refleja
+  esa conversación sin alterar el historial.
+- Al renombrarla mediante «⋯», se actualiza después de confirmar
+  que el servidor aceptó el nuevo nombre.
+- Tras el primer mensaje, se muestra un título provisional breve y
+  se sincroniza después con el título canónico de la T160.
+- Al cambiar GPT, Codex, Claude o Claude Code, cambia la herramienta
+  del título; como cada proveedor tiene un catálogo separado, el
+  visor pasa a «nueva conversación» hasta seleccionar una sesión
+  existente en el modo elegido. Esto no elimina el historial previo.
+
+Los errores y mensajes de trabajo continúan disponibles de forma
+temporal, sin reservar un renglón cuando la aplicación está inactiva.
+No se cambia el botón «Enviar», la barra lateral ni la paginación.
+
+**Estado:** cambios guardados en GitHub; sin recompilar ni instalar
+esta revisión en la Surf. El acceso remoto/compilación sigue requiriendo
+autorización específica. No se utilizó Codex ni Commander.
+
 ### Botón «⋯» por conversación (ajuste táctil)
 
 El toque prolongado no respondió de manera fiable en la Surf.
