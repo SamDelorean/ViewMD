@@ -96,6 +96,21 @@ class CatalogTest(unittest.TestCase):
         self.assertTrue(any("\tidle\t" in v for t,v in after
                             if t == "SESSION" and v.startswith(key + "\t")))
 
+    def test_reload_during_working_does_not_resend(self):
+        key = "reload-while-working"
+        catalog.begin_request("openai", key, "Consulta en curso")
+        before = catalog.context("openai", key)
+        out = self.rpc("RELOAD", session=key)
+        self.assertEqual(out[-1][0], "DONE")
+        self.assertEqual(len([1 for kind, _ in out if kind == "ITEM"]), 0)
+        self.assertTrue(next(value for kind, value in out
+                             if kind == "META").startswith("working\t"))
+        self.assertEqual(catalog.context("openai", key), before)
+        catalog.mark_failed("openai", key)
+        out = self.rpc("RELOAD", session=key)
+        self.assertTrue(next(value for kind, value in out
+                             if kind == "META").startswith("error\t"))
+
     def test_reload_unknown_and_invalid_argument(self):
         response = self.rpc("RELOAD", session="not-existing")
         self.assertEqual(response[-1][0], "ERROR")
