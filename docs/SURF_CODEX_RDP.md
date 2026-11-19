@@ -1,3 +1,11 @@
+> **HISTÓRICO — NO VIGENTE (18/11/2026).** Este documento describe
+> el experimento RDP que no correspondía al objetivo solicitado.
+> **No seguir estas instrucciones para Surf AI.** El botón Codex
+> funciona ahora **dentro del chat GTK3** con el puente T160 y
+> Codex App Server. Ver [SURF_CODEX_NATIVE.md](SURF_CODEX_NATIVE.md).
+> El servicio GNOME Remote Desktop quedó deshabilitado y el puerto
+> 3389 cerrado; los archivos históricos se conservan para auditoría.
+
 # Codex en T160 mediante escritorio remoto desde Surf
 
 Fecha: 2026-11-18. Estado: **cliente y servidor instalados**;
