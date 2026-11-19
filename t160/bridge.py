@@ -106,6 +106,7 @@ class Handler(socketserver.StreamRequestHandler):
                 b"ASK", b"HISTORY", b"LIST", b"RENAME", b"DELETE", b"RELOAD"):
             send(self, "ERROR", "Protocolo incorrecto")
             return
+        started = False
         try:
             provider = fields[1].decode("ascii")
             session = fields[2].decode("ascii")
@@ -179,6 +180,7 @@ class Handler(socketserver.StreamRequestHandler):
             if not prompt.strip() or len(prompt) > 100000:
                 raise ValueError("Consulta vacía o demasiado extensa")
             catalog.begin_request(provider, session, prompt[:60])
+            started = True
             previous = catalog.context(provider, session, MAX_TURNS * 2)
             history = previous[-MAX_TURNS * 2:] + [
                 {"role": "user", "content": prompt}
@@ -204,13 +206,13 @@ class Handler(socketserver.StreamRequestHandler):
                                 prompt, "".join(answer))
             send(self, "DONE")
         except urllib.error.HTTPError as exc:
-            if fields[0] == b"ASK":
+            if started:
                 catalog.mark_failed(provider, session)
             send(self, "ERROR", "API HTTP {}: {}".format(
                 exc.code, exc.reason))
         except (ValueError, UnicodeError, RuntimeError,
                 urllib.error.URLError, TimeoutError, OSError) as exc:
-            if fields[0] == b"ASK" and "provider" in locals() and "session" in locals():
+            if started:
                 catalog.mark_failed(provider, session)
             try:
                 send(self, "ERROR", str(exc)[:500])
