@@ -103,6 +103,14 @@ def snapshot(provider, session, limit=5):
     return (title, status, updated), list(reversed(rows[:limit])), len(rows) > limit
 
 
+
+def mark_seen(provider, session):
+    """Clear the green ready indicator only after the user opens history."""
+    with LOCK, connection() as db:
+        db.execute("""UPDATE conversations SET status='idle'
+            WHERE id=? AND provider=? AND status='ready'""",
+            (session, provider))
+
 def list_page(provider, before_updated=None, before_id=None):
     with LOCK, connection() as db:
         if before_updated is None:
