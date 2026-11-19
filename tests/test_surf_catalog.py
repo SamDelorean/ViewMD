@@ -107,6 +107,29 @@ class CatalogTest(unittest.TestCase):
                             for kind, value in listed if kind == "SESSION"))
         catalog.mark_failed("openai", key)
 
+    def test_second_client_update_visible_after_manual_refresh(self):
+        """An external client writes to T160; refreshing does not repeat ASK."""
+        provider, key = "openai", "shared-between-two-clients"
+        catalog.append_pair(provider, key, "AlphaSmart", "Cliente A",
+                            "Respuesta A")
+        # Simulate a second frontend resuming exactly the same T160 session.
+        catalog.append_pair(provider, key, "AlphaSmart", "Cliente B",
+                            "Respuesta B")
+        context_before = catalog.context(provider, key)
+        self.assertEqual(len(context_before), 4)
+        response = self.rpc("RELOAD", provider=provider, session=key)
+        self.assertEqual(response[-1][0], "DONE")
+        bodies = [text for kind, text in response if kind == "ITEM"]
+        self.assertEqual(len(bodies), 4)
+        self.assertTrue(any(text == "user\tCliente B"
+                            for text in bodies))
+        self.assertTrue(any(text == "assistant\tRespuesta B"
+                            for text in bodies))
+        self.assertEqual(catalog.context(provider, key), context_before)
+        # The next ASK is built using the freshly persisted shared context.
+        self.assertEqual(catalog.context(provider, key)[-1],
+                         {"role": "assistant", "content": "Respuesta B"})
+
     def test_reload_during_working_does_not_resend(self):
         key = "reload-while-working"
         catalog.begin_request("openai", key, "Consulta en curso")
