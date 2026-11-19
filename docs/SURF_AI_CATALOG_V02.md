@@ -128,3 +128,34 @@ en la Surface RT sigue pendiente; el smoke sólo confirma el arranque.
   en Surf y auditoría de solo lectura en T160. Sin supervisión continua.
 - Las pruebas manuales de menú «⋯», renombrado, título y tacto están
   pendientes: el smoke test verifica arranque, no interacción humana.
+
+## Reparación de proporciones de paneles (18-11-2026)
+
+- Problema observado en pantalla 1366x768: la banda izquierda
+  reclamaba aproximadamente 634 px pese a que sus controles ocupaban 252 px.
+  El área principal comenzaba demasiado a la derecha.
+- Cambio: GtkBox horizontal exterior sustituido por GtkPaned horizontal.
+  Panel izquierdo con posición inicial 260 px y divisor regulable; el
+  panel derecho absorbe el ancho restante. Al ocultar el panel izquierdo
+  se conserva un botón de menú de 52 px.
+- Contenido del listado: ancho natural no propagado por GtkScrolledWindow;
+  títulos elididos con ancho mínimo reducido para no forzar expansión.
+- Compilación ARMv7 en Surf: nice -n 10 make -C surf -j1 -> BUILD_PASS,
+  sin advertencias ni errores registrados. Prueba GTK con cierre por timeout
+  sin fallos críticos.
+- Auditoría optativa de una sola medición: SURF_AI_LAYOUT_AUDIT=1.
+  **Resultado real en GTK3:** split=1350 px, navigation=260 px,
+  sidebar=260 px, list=260 px, content=1085 px, divider=260 px.
+  Porcentajes aproximados: 19.3 % navegación, 80.4 % contenido;
+  el resto corresponde al divisor.
+- Commit probado e instalado en Surf: 6c5d49a.
+- Archivos locales:
+  ~/Projects/SurfAI/surf-layout-build.log
+  ~/Projects/SurfAI/surf-layout-smoke.log
+  ~/Projects/SurfAI/surf-layout-audit-build.log
+  ~/Projects/SurfAI/surf-layout-allocation.log
+- La captura gráfica posterior resultó negra debido a la sesión protegida
+  por xfce4-screensaver. No se desbloqueó ni deshabilitó la protección;
+  se validó la geometría con los tamaños reales asignados por GTK3.
+- Sin modificaciones a T160, SSH, sesiones, kernel ni controladores;
+  sin Codex ni supervisión continua.
