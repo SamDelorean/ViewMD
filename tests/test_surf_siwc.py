@@ -109,6 +109,18 @@ class SIWCAuthTest(unittest.TestCase):
             with self.assertRaises(siwc_auth.AuthError):
                 siwc_auth.validate_id_token(signed, "oaiapp_test",
                                              "wrong-nonce")
+            invalid_issuer = dict(claims, iss="https://attacker.invalid")
+            with self.assertRaises(siwc_auth.AuthError):
+                siwc_auth.validate_id_token(
+                    jwt.encode(invalid_issuer, private, algorithm="RS256",
+                               headers={"kid": "key1"}),
+                    "oaiapp_test", "fresh-nonce")
+            expired = dict(claims, exp=int(time.time()) - 30)
+            with self.assertRaises(siwc_auth.AuthError):
+                siwc_auth.validate_id_token(
+                    jwt.encode(expired, private, algorithm="RS256",
+                               headers={"kid": "key1"}),
+                    "oaiapp_test", "fresh-nonce")
             attacker = rsa.generate_private_key(
                 public_exponent=65537, key_size=2048)
             forged = jwt.encode(claims, attacker, algorithm="RS256",
