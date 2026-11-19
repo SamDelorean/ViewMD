@@ -82,6 +82,73 @@ class SIWCAuthTest(unittest.TestCase):
         with self.assertRaises(siwc_auth.AuthError):
             siwc_auth._record(tokens, "oaiapp_test", {"sub": "subject"})
 
+    def test_id_token_signature_audience_and_nonce_are_checked(self):
+        import jwt
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        private = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048)
+        claims = {
+            "iss": siwc_auth.ISSUER,
+            "aud": "oaiapp_test",
+            "sub": "test-subject",
+            "nonce": "fresh-nonce",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 120,
+        }
+        signed = jwt.encode(claims, private, algorithm="RS256",
+                            headers={"kid": "key1"})
+        with mock.patch("jwt.PyJWKClient") as client:
+            client.return_value.get_signing_key_from_jwt.return_value.key = (
+                private.public_key())
+            verified = siwc_auth.validate_id_token(
+                signed, "oaiapp_test", "fresh-nonce")
+            self.assertEqual(verified["sub"], "test-subject")
+            with self.assertRaises(siwc_auth.AuthError):
+                siwc_auth.validate_id_token(signed, "oaiapp_wrong",
+                                             "fresh-nonce")
+            with self.assertRaises(siwc_auth.AuthError):
+                siwc_auth.validate_id_token(signed, "oaiapp_test",
+                                             "wrong-nonce")
+            attacker = rsa.generate_private_key(
+                public_exponent=65537, key_size=2048)
+            forged = jwt.encode(claims, attacker, algorithm="RS256",
+                                headers={"kid": "key1"})
+            with self.assertRaises(siwc_auth.AuthError):
+                siwc_auth.validate_id_token(forged, "oaiapp_test",
+                                             "fresh-nonce")
+
+    def test_refresh_rotates_token_once_and_never_logs_credentials(self):
+        siwc_auth.host_id()
+        original = {
+            "client_id": "oaiapp_test",
+            "subject": "subject",
+            "email": "",
+            "access_token": "expired-test-access",
+            "refresh_token": "old-test-refresh",
+            "scopes": ["resource.invoke",
+                       siwc_auth.SHARING_SCOPE],
+            "expires_at": 0,
+        }
+        siwc_auth._private_write(siwc_auth._profile_path(), original)
+        response = {
+            "scope": siwc_auth.SCOPES,
+            "access_token": "new-test-access",
+            "refresh_token": "rotated-test-refresh",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+        with mock.patch.object(siwc_auth, "_request_json",
+                               return_value=response) as call:
+            self.assertEqual(siwc_auth.access_token(), "new-test-access")
+            self.assertEqual(siwc_auth.access_token(), "new-test-access")
+            call.assert_called_once()
+        saved = siwc_auth.profile()
+        self.assertEqual(saved["refresh_token"], "rotated-test-refresh")
+        self.assertEqual(stat.S_IMODE(
+            siwc_auth._profile_path().stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(
+            (siwc_auth.auth_dir() / ".refresh.lock").stat().st_mode), 0o600)
+
     def test_mock_bridge_does_not_contact_siwc(self):
         # The existing mock tests cover live socket handling.
         with mock.patch.object(siwc_auth, "access_token",
