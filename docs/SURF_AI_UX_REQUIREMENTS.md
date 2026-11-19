@@ -51,6 +51,33 @@ por página, ordenados por actividad más reciente.
 Cambio incorporado a GitHub; todavía no recompilado ni instalado en la
 Surface RT. No autoriza uso adicional de Commander o Codex.
 
+### Botón «⋯» por conversación (ajuste táctil)
+
+El toque prolongado no respondió de manera fiable en la Surf.
+**Control principal:** cada fila del listado muestra un botón discreto
+«⋯» inmediatamente después del título, alineado al extremo derecho.
+Está integrado en la misma fila y no añade renglones ni descarga mensajes.
+
+Al pulsar «⋯» se abre el menú contextual **Renombrar / Eliminar** de
+esa conversación exacta. El destino de las acciones se guarda en la fila
+que originó el menú: **no depende de la fila seleccionada** y abrir el
+menú no recupera ni abre el historial. La eliminación sigue requiriendo
+confirmación explícita y los errores del servidor no se confunden con
+una eliminación exitosa.
+
+El clic derecho permanece como alternativa. El gesto de pulsación
+prolongada se conserva como opción experimental, pero no es requisito
+para acceder a las acciones.
+
+El catálogo sigue limitado a 20 títulos por página y ordenado por
+actividad reciente descendente. No se cambió la T160, ni la entrada de
+texto ni los botones de navegación de mensajes.
+
+**Estado:** código y documento actualizados en GitHub; **pendiente
+compilación ARMv7 e instalación en Surf**, que necesitan autorización
+explícita para utilizar Commander. No se usó Codex ni Commander en esta
+revisión.
+
 ### Controles inferiores compactos (ajuste posterior)
 
 La fila independiente de «Mensajes anteriores» y «Volver a recientes»
