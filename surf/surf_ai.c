@@ -17,7 +17,7 @@
 typedef struct {
   GtkWidget *window, *input, *status, *send, *new_chat, *provider;
   GtkWidget *sidebar, *sidebar_restore, *session_list, *scroll, *mode_buttons[4];
-  GtkWidget *load_more, *older, *recent, *rename_button, *delete_button;
+  GtkWidget *load_more, *older, *recent;
   gchar *list_cursor;
   guint history_offset;
   gint mode;
@@ -370,6 +370,8 @@ static void on_session_selected(GtkListBox *box, GtkListBoxRow *row,
 
 static void on_row_long_press(GtkGestureLongPress *gesture,
                               gdouble x, gdouble y, gpointer ptr);
+static gboolean on_row_right_click(GtkWidget *row,
+                                   GdkEventButton *event, gpointer ptr);
 
 static void load_catalog(SurfUI *ui, gboolean append) {
   if (ui->busy || !ui->session_list) return;
@@ -400,6 +402,9 @@ static void load_catalog(SurfUI *ui, gboolean append) {
         gtk_widget_set_margin_bottom(text, 6);
         gtk_container_add(GTK_CONTAINER(row), text);
         gtk_widget_set_size_request(row, -1, 47);
+        gtk_widget_add_events(row, GDK_BUTTON_PRESS_MASK);
+        g_signal_connect(row, "button-press-event",
+                         G_CALLBACK(on_row_right_click), ui);
         GtkGesture *press = gtk_gesture_long_press_new(row);
         gtk_gesture_single_set_touch_only(GTK_GESTURE_SINGLE(press), TRUE);
         g_signal_connect(press, "pressed",
@@ -499,11 +504,10 @@ static void on_touch_delete(GtkButton *button, gpointer ptr) {
   on_delete(button, ptr);
 }
 
-static void on_row_long_press(GtkGestureLongPress *gesture, gdouble x,
-                              gdouble y, gpointer ptr) {
-  SurfUI *ui = ptr;
-  GtkWidget *row = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-  (void)x; (void)y;
+/* Both pointer secondary-click and a long touch use the same menu.
+   Selecting the row for the menu must never fetch its history. */
+static void show_row_actions(SurfUI *ui, GtkWidget *row,
+                             gdouble x, gdouble y) {
   if (!GTK_IS_LIST_BOX_ROW(row) || ui->busy) return;
   ui->suppress_selection = TRUE;
   gtk_list_box_select_row(GTK_LIST_BOX(ui->session_list),
@@ -514,6 +518,8 @@ static void on_row_long_press(GtkGestureLongPress *gesture, gdouble x,
   GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
   GtkWidget *rename = gtk_button_new_with_label("Renombrar");
   GtkWidget *remove = gtk_button_new_with_label("Eliminar...");
+  GdkRectangle point = {(gint)x, (gint)y, 1, 1};
+  gtk_popover_set_pointing_to(GTK_POPOVER(popover), &point);
   gtk_container_set_border_width(GTK_CONTAINER(actions), 8);
   gtk_widget_set_size_request(rename, 130, 46);
   gtk_widget_set_size_request(remove, 130, 46);
@@ -524,6 +530,24 @@ static void on_row_long_press(GtkGestureLongPress *gesture, gdouble x,
   g_signal_connect(remove, "clicked", G_CALLBACK(on_touch_delete), ui);
   gtk_widget_show_all(popover);
   gtk_popover_popup(GTK_POPOVER(popover));
+}
+
+static void on_row_long_press(GtkGestureLongPress *gesture, gdouble x,
+                              gdouble y, gpointer ptr) {
+  GtkWidget *row = gtk_event_controller_get_widget(
+      GTK_EVENT_CONTROLLER(gesture));
+  show_row_actions(ptr, row, x, y);
+}
+
+static gboolean on_row_right_click(GtkWidget *row, GdkEventButton *event,
+                                   gpointer ptr) {
+  if (event->type != GDK_BUTTON_PRESS ||
+      event->button != GDK_BUTTON_SECONDARY)
+    return FALSE;
+  SurfUI *ui = ptr;
+  if (ui->busy) return TRUE;
+  show_row_actions(ui, row, event->x, event->y);
+  return TRUE;
 }
 
 static gboolean refresh_after_answer(gpointer ptr) {
@@ -633,7 +657,7 @@ int main(int argc, char **argv) {
   SurfUI ui = {0};
   GtkWidget *root, *scroller, *input_scroller, *bottom;
   GtkWidget *workspace, *sidebar_box, *main_column, *toggle;
-  GtkWidget *side_scroll, *side_controls, *history_controls;
+  GtkWidget *side_scroll, *history_controls;
   GtkWidget *mode_row1, *mode_row2, *sidebar_restore;
   const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
   gtk_init(&argc, &argv);
@@ -728,16 +752,6 @@ int main(int argc, char **argv) {
   gtk_widget_set_size_request(ui.load_more, -1, 46);
   gtk_box_pack_start(GTK_BOX(sidebar_box), ui.load_more, FALSE, FALSE, 0);
   g_signal_connect(ui.load_more,"clicked",G_CALLBACK(on_load_more),&ui);
-  side_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  gtk_box_pack_start(GTK_BOX(sidebar_box), side_controls, FALSE, FALSE, 2);
-  ui.rename_button = gtk_button_new_with_label("Renombrar");
-  ui.delete_button = gtk_button_new_with_label("Eliminar");
-  gtk_widget_set_size_request(ui.rename_button, -1, 46);
-  gtk_widget_set_size_request(ui.delete_button, -1, 46);
-  gtk_box_pack_start(GTK_BOX(side_controls),ui.rename_button,TRUE,TRUE,0);
-  gtk_box_pack_start(GTK_BOX(side_controls),ui.delete_button,TRUE,TRUE,0);
-  g_signal_connect(ui.rename_button,"clicked",G_CALLBACK(on_rename),&ui);
-  g_signal_connect(ui.delete_button,"clicked",G_CALLBACK(on_delete),&ui);
   main_column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_widget_set_hexpand(main_column, TRUE);
   gtk_box_pack_start(GTK_BOX(workspace), main_column, TRUE, TRUE, 6);
