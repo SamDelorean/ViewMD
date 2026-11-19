@@ -53,14 +53,28 @@ Comprueba dispositivos de entrada y xinput si ya estuviera instalado.
 
 ## Limitaciones y restricciones
 
-- La pantalla de Surface RT soporta toque, pero todavía no está
-  acreditada la recepción de sus eventos bajo esta instalación concreta.
+- Auditoría en hardware completada: /dev/input/event9 se identifica como
+  ID_INPUT_TOUCHSCREEN=1 (Atmel hid-over-i2c 03EB:8207), área 227 x 132 mm.
+  Su presencia está confirmada; el reconocimiento de gestos requiere prueba manual.
 - El comportamiento de pinza y pulsación prolongada necesita prueba física.
 - El teclado integrado es básico, sin predicción ni autocorrección.
 - Cambios incorporados a la rama surf-ai-client en GitHub.
-- NO compilados ni instalados en Surf en esta revisión: compilar sólo en Surf
-  tras autorización, con nice y make -j1. No compilar en T160.
-- No se usó Codex ni Remote Desktop Commander para la revisión.
+- **Compilación e instalación validadas en Surf**, exclusivamente con
+  nice -n 10 y make -j1, sin compilar en T160.
+- Commit instalado y probado: ccf697c (rama surf-ai-client).
+- Primera compilación: error por gtk_gesture_get_widget, resuelto
+  sustituyéndolo por gtk_event_controller_get_widget para GTK3.
+- Segunda compilación: BUILD_PASS, ELF ARM 32-bit musl, 0 warnings/errors.
+- Apertura gráfica en XFCE4, DISPLAY=:0 durante 8 s: GUI_SMOKE_PASS
+  (cierre programado por timeout), sin Gtk-CRITICAL ni GLib-CRITICAL.
+- El lanzador XFCE4 existente apunta al binario actualizado en
+  /home/user/Projects/SurfAI/ViewMD/surf/surf-ai.
+- Logs: ~/Projects/SurfAI/surf-touch-build2.log y surf-touch-smoke2.log.
+- La inspección táctil confirmó udev ID_INPUT_TOUCHSCREEN=1; no se
+  ha simulado o medido contacto físico real. Teclado virtual Onboard
+  ya está instalado; Surf AI también dispone del propio.
+- La revisión de fuentes no utilizó Codex ni Commander. La compilación y
+  las auditorías de esta sesión usaron Commander con autorización puntual.
 - No se tocó kernel, arranque, firmware, DTB ni drivers.
 
 ## Compilación futura autorizada (exclusivamente en Surf)
@@ -73,3 +87,10 @@ Desde el repositorio limpio:
 
 Abrir desde XFCE para validar el comportamiento táctil manualmente.
 No activar servicios, supervisión continua o autorun.
+
+## Estado de validación actualizado (2026-11-18)
+
+- Repositorio master intacto; sólo la rama surf-ai-client cambió.
+- No se alteraron kernel, controladores, servicios, Device Tree ni particiones.
+- Pendiente validación manual de toque, deslizamiento cinético, pinza y
+  menú de pulsación prolongada; una prueba de arranque no los acredita.
