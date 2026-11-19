@@ -92,16 +92,59 @@ T160, al utilizar esta función se actualizarán únicamente los metadatos
 de estado en la base SQLite; **no se borran ni reenvían los mensajes**.
 No se utiliza Codex ni supervisión continua.
 
-**Estado: fuente y pruebas automatizadas añadidas a GitHub, NO
-ejecutadas todavía en hardware**. Antes de usar el nuevo protocolo se
-deben validar los tests Python de T160 y una compilación nativa en Surf;
-la versión instalada actualmente no incorpora esta revisión. El bridge
-que ya está corriendo aún entiende el protocolo anterior.
+## Instalación y aceptación real — 18 de noviembre de 2026
 
-La actualización de los dos procesos debe ser coordinada: primero la
-T160 (respaldando la base y conservando modo mock si aplica), y luego
-el binario GTK3 en Surf con \`nice -n 10 make -C surf -j1\`. Commander
-y cualquier reinicio de servicio requerirán autorización específica.
+**Implementado y verificado en T160 y Surface RT**, conservando el modo
+`--mock` (sin claves API ni consultas a servicios externos).
+
+### T160
+- Base original respaldada mediante la API de copia SQLite en
+  `~/Projects/surf-ai/backups/sessions-before-reload-20261118-220134.sqlite3`.
+  Comprobación de integridad: `ok`; antes de la migración había tres
+  conversaciones y seis mensajes.
+- Suite Python de protocolo y persistencia: **13 pruebas PASS**, con
+  bases temporales aisladas. Se corrigió un acoplamiento de fixtures que
+  inicialmente hacía fallar una prueba sin afectar datos reales.
+- Puente reiniciado como **`surf-ai-bridge.service`**, servicio de
+  usuario independiente, puerto `127.0.0.1:8765`, opción `--mock`.
+  Se configuró sin reinicio automático y **sin habilitar arranque al
+  encender el equipo**. No se reinició el servicio remoto de Commander.
+- Prueba de integración real: `ASK → LIST ready → RELOAD idle →
+  2 ITEM → RELOAD sin duplicados → DELETE`.
+- Al terminar, permanecían exactamente **3 conversaciones, 6 mensajes**
+  y la integridad de SQLite era correcta.
+
+### Surface RT
+- Código `surf-ai-client` sincronizado y compilado **nativamente ARMv7**
+  mediante `nice -n 10 make -C surf -j1 TARGET=surf-ai-next`.
+- **BUILD PASS**, sin advertencias; dependencias dinámicas completas.
+- `SURF_AI_LAYOUT_AUDIT=1`: navegación **260 px** y contenido
+  **1085 px**, en ventana de 1366 × 768.
+- Prueba real **a través del túnel SSH desde Surf**: nuevo catálogo con
+  cuatro campos, solicitud mock, estado `ready`, recarga
+  `idle` con dos mensajes, ausencia de duplicación y borrado de
+  sesión temporal. **PASS**.
+- Despliegue atómico del ejecutable, con respaldo anterior en
+  `~/Projects/SurfAI/backups/surf-ai-before-actualizar-20261118`.
+  SHA-256 del instalado:
+  `2cc9dcd4c4d9e42ab8da74b49aa438987e4f6506bdbe827d508460d1240ad736`.
+- Prueba de arranque GTK3 del nuevo ejecutable: **PASS**, sin errores
+  críticos registrados. El cierre con señal 143 corresponde al
+  `timeout` de la prueba, no a un fallo de aplicación.
+- Se preservó la ventana de usuario que ya estaba abierta, para no
+  perder texto sin enviar. **Cerrar y reabrir Surf AI es necesario para
+  activar en esa ventana el nuevo ejecutable**.
+- Prueba manual del botón táctil y colores en pantalla desbloqueada:
+  **pendiente**. Las pruebas de protocolo y el arranque gráfico sí pasaron.
+- Logs locales:
+  `~/Projects/surf-ai/reload-protocol-tests.log` (T160);
+  `~/Projects/SurfAI/reload-status-build.log`,
+  `reload-status-smoke.log`,
+  `reload-status-installed-smoke.log` (Surf).
+
+No se habilitaron APIs reales, no se ejecutó Codex, no se modificaron
+sistema, kernel, Wi-Fi ni conversaciones ajenas. No se configuró
+supervisión continua ni sondeo remoto periódico.
 
 Pruebas añadidas en \`tests/test_surf_catalog.py\`:
 listado con estado, transiciones, lectura de historial, recarga sin
