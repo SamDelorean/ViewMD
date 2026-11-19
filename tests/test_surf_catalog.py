@@ -30,6 +30,12 @@ class CatalogTest(unittest.TestCase):
         catalog.DB_PATH = cls.original_db_path
         cls.tmp.cleanup()
 
+    def setUp(self):
+        """Each test owns an empty SQLite dataset; no ordering dependencies."""
+        with catalog.connection() as db:
+            db.execute("DELETE FROM messages")
+            db.execute("DELETE FROM conversations")
+
     def rpc(self, op, provider="openai", session="catalog-test", argument="-"):
         wire = "\t".join((op, provider, session, argument)) + "\n"
         result = []
@@ -66,6 +72,7 @@ class CatalogTest(unittest.TestCase):
 
     def test_rename_and_delete(self):
         key = "conv-025"
+        catalog.append_pair("openai", key, "Antes", "Pregunta", "Respuesta")
         title = "Nuevo título técnico"
         out = self.rpc("RENAME", session=key,
                        argument=base64.b64encode(title.encode()).decode())
