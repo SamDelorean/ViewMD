@@ -96,6 +96,17 @@ class CatalogTest(unittest.TestCase):
         self.assertTrue(any("\tidle\t" in v for t,v in after
                             if t == "SESSION" and v.startswith(key + "\t")))
 
+    def test_duplicate_ask_cannot_poison_active_status(self):
+        key = "concurrent-ask"
+        catalog.begin_request("openai", key, "Consulta existente")
+        reply = self.rpc("ASK", session=key,
+                         argument=base64.b64encode(b"new attempt").decode())
+        self.assertEqual(reply[-1][0], "ERROR")
+        listed = self.rpc("LIST")
+        self.assertTrue(any(key + "\t" in value and "\tworking\t" in value
+                            for kind, value in listed if kind == "SESSION"))
+        catalog.mark_failed("openai", key)
+
     def test_reload_during_working_does_not_resend(self):
         key = "reload-while-working"
         catalog.begin_request("openai", key, "Consulta en curso")
