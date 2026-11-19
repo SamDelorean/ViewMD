@@ -87,7 +87,7 @@ class SIWCAuthTest(unittest.TestCase):
         with mock.patch.object(siwc_auth, "access_token",
                                side_effect=AssertionError("NO AUTH")):
             # Confirm mock branch is separate from stream_provider.
-            self.assertIn("def stream_provider", bridge.__dict__)
+            self.assertTrue(callable(bridge.stream_provider))
 
 
 class SIWCBridgeTest(unittest.TestCase):
