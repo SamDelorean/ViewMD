@@ -30,7 +30,8 @@ typedef struct {
   gchar *session, *conversation_title;
   gboolean new_session, mode_initialized;
   gboolean busy;
-  guint render_id;
+  guint render_id, status_pulse_id;
+  gboolean status_pulse_bright;
 } SurfUI;
 
 typedef struct {
@@ -102,6 +103,104 @@ static void reset_conversation_view(SurfUI *ui) {
   if (ui->viewer) schedule_render(ui);
 }
 
+/* Color is applied to the same circular "⋯" button: no extra column.
+   This is a local GTK animation only while an existing row is working,
+   never a network polling or background monitoring process. */
+static void install_conversation_css(void) {
+  static const gchar css[] =
+      "button.surf-chat-menu { min-width:34px; min-height:34px;"
+      " padding:0px; border-radius:19px; background-image:none;"
+      " box-shadow:none; border:1px solid rgba(0,0,0,0.14);"
+      " font-size:16px; font-weight:bold; }"
+      "button.surf-chat-menu.surf-state-idle {background-color:#879199;color:white;}"
+      "button.surf-chat-menu.surf-state-working {background-color:#e2b632;color:#382600;}"
+      "button.surf-chat-menu.surf-state-working.surf-pulse {background-color:#fff0aa;color:#382600;}"
+      "button.surf-chat-menu.surf-state-ready {background-color:#418e56;color:white;}"
+      "button.surf-chat-menu.surf-state-error {background-color:#c55252;color:white;}";
+  GtkCssProvider *provider = gtk_css_provider_new();
+  gtk_css_provider_load_from_data(provider, css, -1, NULL);
+  gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+        GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  g_object_unref(provider);
+}
+
+static const gchar *valid_row_state(const gchar *status) {
+  if (g_strcmp0(status, "working") == 0) return "working";
+  if (g_strcmp0(status, "ready") == 0) return "ready";
+  if (g_strcmp0(status, "error") == 0) return "error";
+  return "idle";
+}
+
+static void set_menu_state(GtkWidget *button, const gchar *status) {
+  GtkStyleContext *style = gtk_widget_get_style_context(button);
+  static const gchar *classes[] = {
+      "surf-state-idle", "surf-state-working", "surf-state-ready",
+      "surf-state-error", "surf-pulse"
+  };
+  for (guint i = 0; i < G_N_ELEMENTS(classes); ++i)
+    gtk_style_context_remove_class(style, classes[i]);
+  const gchar *normalized = valid_row_state(status);
+  gchar *klass = g_strconcat("surf-state-", normalized, NULL);
+  gtk_style_context_add_class(style, "surf-chat-menu");
+  gtk_style_context_add_class(style, klass);
+  g_free(klass);
+  const gchar *tip =
+      g_strcmp0(normalized, "working") == 0 ? "Procesando respuesta · Opciones" :
+      g_strcmp0(normalized, "ready") == 0 ? "Respuesta lista · Opciones" :
+      g_strcmp0(normalized, "error") == 0 ? "Error de conversación · Opciones" :
+                                           "Consultada / sin actividad · Opciones";
+  gtk_widget_set_tooltip_text(button, tip);
+}
+
+static gboolean pulse_working_buttons(gpointer ptr) {
+  SurfUI *ui = ptr;
+  gboolean any = FALSE;
+  ui->status_pulse_bright = !ui->status_pulse_bright;
+  GList *rows = gtk_container_get_children(GTK_CONTAINER(ui->session_list));
+  for (GList *node = rows; node; node = node->next) {
+    GtkWidget *row = GTK_WIDGET(node->data);
+    const gchar *status = g_object_get_data(G_OBJECT(row), "session-status");
+    GtkWidget *button = g_object_get_data(G_OBJECT(row), "status-button");
+    if (g_strcmp0(status, "working") == 0 && GTK_IS_BUTTON(button)) {
+      any = TRUE;
+      GtkStyleContext *style = gtk_widget_get_style_context(button);
+      if (ui->status_pulse_bright)
+        gtk_style_context_add_class(style, "surf-pulse");
+      else
+        gtk_style_context_remove_class(style, "surf-pulse");
+    }
+  }
+  g_list_free(rows);
+  if (!any) {
+    ui->status_pulse_id = 0;
+    return G_SOURCE_REMOVE;
+  }
+  return G_SOURCE_CONTINUE;
+}
+
+static void ensure_status_pulse(SurfUI *ui) {
+  if (!ui->status_pulse_id)
+    ui->status_pulse_id = g_timeout_add(650, pulse_working_buttons, ui);
+}
+
+static void set_visible_session_state(SurfUI *ui, const gchar *session,
+                                      const gchar *status) {
+  GList *rows = gtk_container_get_children(GTK_CONTAINER(ui->session_list));
+  for (GList *node = rows; node; node = node->next) {
+    GtkWidget *row = GTK_WIDGET(node->data);
+    const gchar *id = g_object_get_data(G_OBJECT(row), "session-id");
+    if (g_strcmp0(id, session) == 0) {
+      g_object_set_data_full(G_OBJECT(row), "session-status",
+                             g_strdup(status), g_free);
+      GtkWidget *button = g_object_get_data(G_OBJECT(row), "status-button");
+      if (GTK_IS_BUTTON(button)) set_menu_state(button, status);
+      if (g_strcmp0(status, "working") == 0) ensure_status_pulse(ui);
+      break;
+    }
+  }
+  g_list_free(rows);
+}
+
 static gboolean refresh_after_answer(gpointer ptr);
 
 static gboolean apply_event(gpointer ptr) {
@@ -120,6 +219,7 @@ static gboolean apply_event(gpointer ptr) {
     for (guint i = 0; i < 4; i++)
       gtk_widget_set_sensitive(ui->mode_buttons[i], TRUE);
     set_status(ui, ev->error ? "Error del servidor" : "");
+    set_visible_session_state(ui, ui->session, ev->error ? "error" : "ready");
     g_string_append(ui->transcript, "\n\n---\n\n");
     schedule_render(ui);
     if (!ev->error) g_idle_add(refresh_after_answer, ui);
@@ -260,6 +360,7 @@ static void on_send(GtkWidget *widget, gpointer ptr) {
                                        ? "Claude" : "GPT");
   schedule_render(ui);
   gtk_text_buffer_set_text(buffer, "", -1);
+  set_visible_session_state(ui, ui->session, "working");
   set_status(ui, "Consultando T160...");
   ui->busy = TRUE;
   gtk_widget_set_sensitive(ui->send, FALSE);
@@ -444,14 +545,17 @@ static void load_catalog(SurfUI *ui, gboolean append) {
   for (guint i = 0; lines[i]; i++) {
     if (g_str_has_prefix(lines[i], "SESSION\t")) {
       gchar *decoded = decode_b64(lines[i]+8);
-      gchar **fields = g_strsplit(decoded, "\t", 3);
+      gchar **fields = g_strsplit(decoded, "\t", 4);
       if (fields[0] && fields[1] && fields[2]) {
+        /* Accept old three-field catalogs until the T160 bridge is upgraded. */
+        const gchar *row_status = fields[3] ? fields[2] : "idle";
+        const gchar *row_title = fields[3] ? fields[3] : fields[2];
         /* After a first reply or rename, use the canonical T160 title. */
         if (!ui->new_session && g_strcmp0(fields[0], ui->session) == 0)
-          set_conversation_title(ui, fields[2]);
+          set_conversation_title(ui, row_title);
         GtkWidget *row = gtk_list_box_row_new();
         GtkWidget *cell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-        GtkWidget *text = gtk_label_new(fields[2]);
+        GtkWidget *text = gtk_label_new(row_title);
         GtkWidget *more = gtk_button_new_with_label("⋯");
         gtk_label_set_xalign(GTK_LABEL(text), 0);
         gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
@@ -463,7 +567,7 @@ static void load_catalog(SurfUI *ui, gboolean append) {
         gtk_box_pack_start(GTK_BOX(cell), text, TRUE, TRUE, 0);
         gtk_widget_set_size_request(more, 36, 40);
         gtk_button_set_relief(GTK_BUTTON(more), GTK_RELIEF_NONE);
-        gtk_widget_set_tooltip_text(more, "Opciones de esta conversación");
+        set_menu_state(more, row_status);
         gtk_box_pack_end(GTK_BOX(cell), more, FALSE, FALSE, 0);
         gtk_container_add(GTK_CONTAINER(row), cell);
         gtk_widget_set_size_request(row, -1, 47);
@@ -478,7 +582,12 @@ static void load_catalog(SurfUI *ui, gboolean append) {
         g_object_set_data_full(G_OBJECT(row), "session-id",
                                g_strdup(fields[0]), g_free);
         g_object_set_data_full(G_OBJECT(row), "session-title",
-                               g_strdup(fields[2]), g_free);
+                               g_strdup(row_title), g_free);
+        g_object_set_data_full(G_OBJECT(row), "session-status",
+                               g_strdup(valid_row_state(row_status)), g_free);
+        g_object_set_data(G_OBJECT(row), "status-button", more);
+        if (g_strcmp0(row_status, "working") == 0)
+          ensure_status_pulse(ui);
         gtk_list_box_insert(GTK_LIST_BOX(ui->session_list), row, -1);
       }
       g_strfreev(fields);
@@ -768,6 +877,7 @@ int main(int argc, char **argv) {
   GtkWidget *mode_row1, *mode_row2, *sidebar_restore;
   const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
   gtk_init(&argc, &argv);
+  install_conversation_css();
   config = config_new();
   /* Do not read or alter the original ViewMD settings. */
   g_free(config->theme);
