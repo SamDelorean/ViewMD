@@ -619,6 +619,78 @@ static void on_load_more(GtkButton *btn, gpointer ptr) {
   (void)btn; load_catalog(ptr, TRUE);
 }
 
+/* Reload is a read-only server-side SQLite snapshot, not a new ASK or
+   provider API request. The selected conversation is fully refreshed on
+   T160 and the Surf viewer is replaced with its last five saved messages. */
+static void on_reload(GtkButton *button, gpointer ptr) {
+  SurfUI *ui = ptr;
+  if (ui->busy) return;
+  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button),
+                                               GTK_TYPE_POPOVER);
+  if (!GTK_IS_POPOVER(popover)) return;
+  GtkWidget *row = g_object_get_data(G_OBJECT(popover), "surf-target-row");
+  if (!GTK_IS_LIST_BOX_ROW(row)) return;
+  gchar *id = g_strdup(g_object_get_data(G_OBJECT(row), "session-id"));
+  gtk_widget_destroy(popover);
+  if (!id) return;
+
+  gchar *reply = catalog_exchange(ui, "RELOAD", id, "-");
+  if (!reply) {
+    set_visible_session_state(ui, id, "error");
+    g_free(id);
+    return;
+  }
+  gchar *title = NULL;
+  GString *md = g_string_new("");
+  gboolean received_meta = FALSE, more = FALSE;
+  gchar **lines = g_strsplit(reply, "\n", -1);
+  for (guint i = 0; lines[i]; ++i) {
+    if (g_str_has_prefix(lines[i], "META\t")) {
+      gchar *decoded = decode_b64(lines[i] + 5);
+      gchar **parts = g_strsplit(decoded, "\t", 3);
+      if (parts[0] && parts[1] && parts[2]) {
+        g_free(title);
+        title = g_strdup(parts[2]);
+        received_meta = TRUE;
+      }
+      g_strfreev(parts);
+      g_free(decoded);
+    } else if (g_str_has_prefix(lines[i], "ITEM\t")) {
+      gchar *item = decode_b64(lines[i] + 5);
+      if (g_str_has_prefix(item, "user\t"))
+        g_string_append_printf(md, "### Tú\n\n%s\n\n---\n\n", item + 5);
+      else if (g_str_has_prefix(item, "assistant\t"))
+        g_string_append_printf(md, "### Asistente\n\n%s\n\n---\n\n", item + 10);
+      g_free(item);
+    } else if (g_str_has_prefix(lines[i], "MORE\t")) {
+      gchar *value = decode_b64(lines[i] + 5);
+      more = g_strcmp0(value, "1") == 0;
+      g_free(value);
+    }
+  }
+  if (received_meta) {
+    g_free(ui->session);
+    ui->session = g_strdup(id);
+    ui->new_session = FALSE;
+    set_conversation_title(ui, title);
+    g_string_assign(ui->transcript, md->str);
+    ui->history_offset = 0;
+    gtk_widget_set_sensitive(ui->older, more);
+    gtk_widget_set_sensitive(ui->recent, FALSE);
+    schedule_render(ui);
+    set_status(ui, "");
+    load_catalog(ui, FALSE);  /* authoritative status is now idle */
+  } else {
+    set_visible_session_state(ui, id, "error");
+    set_status(ui, "T160 devolvió una recarga inválida");
+  }
+  g_strfreev(lines);
+  g_string_free(md, TRUE);
+  g_free(title);
+  g_free(reply);
+  g_free(id);
+}
+
 /* The menu carries its own target row: no selection change or history load. */
 static void on_rename(GtkButton *button, gpointer ptr) {
   SurfUI *ui = ptr;
@@ -707,6 +779,7 @@ static void show_row_actions(SurfUI *ui, GtkWidget *row,
   if (!GTK_IS_LIST_BOX_ROW(row) || ui->busy) return;
   GtkWidget *popover = gtk_popover_new(anchor);
   GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+  GtkWidget *reload = gtk_button_new_with_label("Recargar");
   GtkWidget *rename = gtk_button_new_with_label("Renombrar");
   GtkWidget *remove = gtk_button_new_with_label("Eliminar...");
   g_object_set_data(G_OBJECT(popover), "surf-target-row", row);
@@ -715,11 +788,14 @@ static void show_row_actions(SurfUI *ui, GtkWidget *row,
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &point);
   }
   gtk_container_set_border_width(GTK_CONTAINER(actions), 8);
+  gtk_widget_set_size_request(reload, 130, 46);
   gtk_widget_set_size_request(rename, 130, 46);
   gtk_widget_set_size_request(remove, 130, 46);
   gtk_container_add(GTK_CONTAINER(popover), actions);
+  gtk_box_pack_start(GTK_BOX(actions), reload, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(actions), rename, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(actions), remove, FALSE, FALSE, 0);
+  g_signal_connect(reload, "clicked", G_CALLBACK(on_reload), ui);
   g_signal_connect(rename, "clicked", G_CALLBACK(on_rename), ui);
   g_signal_connect(remove, "clicked", G_CALLBACK(on_delete), ui);
   gtk_widget_show_all(popover);
