@@ -24,7 +24,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import parse_qs, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, HTTPRedirectHandler
 import uuid
 import webbrowser
 
@@ -175,7 +175,7 @@ class _Callback(BaseHTTPRequestHandler):
         if result is None:
             result = {"error": "Callback OAuth inválido o estado incorrecto"}
         self.server.callback = result
-        body = (b"Autorizacion recibida. Puedes cerrar esta pestana."
+        body = (b"Codigo recibido. Verificando permisos en T160."
                 if "code" in result else
                 b"Autorizacion no completada. Reintenta desde Surf AI.")
         self.send_response(200 if "code" in result else 400)
@@ -184,6 +184,12 @@ class _Callback(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """Never forward SIWC credentials through an unexpected HTTP redirect."""
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise AuthError("Redirección inesperada del servicio de autorización")
 
 
 def _request_json(uri, form=None, bearer=None):
@@ -198,9 +204,9 @@ def _request_json(uri, form=None, bearer=None):
     req = Request(uri, data=body, headers=headers,
                   method="POST" if body is not None else "GET")
     try:
-        with urlopen(req, timeout=25) as response:
+        with build_opener(_NoRedirect()).open(req, timeout=25) as response:
             result = json.load(response)
-    except Exception as exc:
+    except Exception:
         # Do not echo request bodies, response bodies or bearer credentials.
         raise AuthError("Falló el intercambio HTTPS con OpenAI") from None
     if not isinstance(result, dict):
@@ -323,8 +329,7 @@ def access_token():
     root = auth_dir()
     lock_path = root / ".refresh.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-    try:
-        with os.fdopen(fd, "r+") as file:
+    with os.fdopen(fd, "r+") as file:
             fcntl.flock(file, fcntl.LOCK_EX)
             saved = profile()
             if not saved:
@@ -348,8 +353,6 @@ def access_token():
             updated = _record(tokens, saved["client_id"], identity, saved)
             _private_write(_profile_path(), updated)
             return updated["access_token"]
-    finally:
-        pass
 
 
 def list_models():
