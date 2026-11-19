@@ -168,3 +168,19 @@ MIT License
 - For a feature complete AI application try out [ChatGTK](https://github.com/rabfulton/ChatGTK)
 - A lightweight speech to text implementation [Auriscribe](https://github.com/rabfulton/Auriscribe)
 - A lightweight local movie database and browser [ReelVault](https://github.com/rabfulton/ReelVault)
+
+
+---
+
+## Surf AI (experimental branch)
+
+This fork includes an **independent GTK3 AI terminal** for Microsoft Surface RT
+(postmarketOS ARMv7), using ViewMD's native Markdown renderer. The original
+ViewMD application stays available and unchanged.
+
+See [docs/SURF_AI.md](docs/SURF_AI.md) for the read-only device audit,
+GTK3 native build instructions, T160 loopback relay, GPT/Claude configuration,
+protocol, safety boundaries and validation status.
+
+Quick entry points: `surf/surf_ai.c`, `surf/Makefile`, `t160/bridge.py`.
+**ARMv7 hardware compilation and tests are pending; no device was modified.**
