@@ -58,3 +58,24 @@ La lista de conversaciones se crea sobre el catálogo propio y no sincroniza
 chats web existentes. Falta integrar la ejecución real de Codex, Claude Code,
 herramientas y adjuntos. La prueba de clic/táctil y captura visual del panel
 en la Surface RT sigue pendiente; el smoke sólo confirma el arranque.
+
+## Recompilación e instalación posterior (2026-11-18)
+
+- Surf: actualización fast-forward de ccf697c a 4d97ed3.
+- Compilación nativa ARMv7 con nice -n 10 y make -C surf -j1: **BUILD_PASS**.
+- Binario: /home/user/Projects/SurfAI/ViewMD/surf/surf-ai (ELF 32-bit ARM EABI5, musl).
+- Dependencias dinámicas: **LINK_PASS**; sin bibliotecas faltantes.
+- Advertencias de compilación: ninguna.
+- Apertura GTK3 en DISPLAY=:0, limitada a 8 segundos:
+  **GUI_SMOKE_PASS**; cierre por timeout, sin errores críticos.
+- Lanzador XFCE4 existente: Exec apunta al ejecutable actualizado.
+- Logs locales:
+  /home/user/Projects/SurfAI/surf-build-context-menu.log y
+  /home/user/Projects/SurfAI/surf-gui-context-menu.log.
+- Incluye fila izquierda compacta, menú de conversación mediante
+  clic derecho/pulsación prolongada, y controles de historial apilados
+  junto al campo de texto.
+- No se usó Codex; Commander se utilizó sólo bajo autorización para
+  comprobar y compilar en la Surface RT. Sin supervisión continua.
+- Pendiente prueba manual de interacción con ratón y tacto; una
+  apertura sin errores no valida el comportamiento de los gestos.
