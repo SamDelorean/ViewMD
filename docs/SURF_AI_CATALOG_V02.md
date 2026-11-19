@@ -9,9 +9,12 @@
 - Botón "Cargar 20 más": paginación keyset por (updated,id), también descendente.
 - Seleccionar fila: recupera **máximo cinco mensajes** completos para el panel.
 - Botones "Mensajes anteriores" y "Volver a recientes" cambian la ventana visual.
+- Menú contextual al hacer **clic derecho** o una **pulsación prolongada**
+  sobre una conversación; sin botones de Renombrar/Eliminar permanentes.
 - "Renombrar": cuadro editable, máximo 100 caracteres.
 - "Eliminar": cuadro modal de confirmación; una vez aceptado se borran la
   conversación y sus mensajes de la base SQLite de Surf AI en T160.
+- Abrir el menú no descarga mensajes ni abre el historial de la conversación.
 - La T160 conserva contexto del proveedor y conversaciones en SQLite, mientras
   la Surface RT sólo mantiene la ventana gráfica necesaria.
 - Las conversaciones originales de ChatGPT web y Claude web no son
