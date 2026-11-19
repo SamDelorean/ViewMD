@@ -96,7 +96,7 @@ para una respuesta nueva completa; **rojo** ante un fallo. No se añade
 ningún indicador separado ni se pierde ancho del título.
 
 El botón conserva el menú contextual, ahora con tres acciones:
-**Recargar, Renombrar, Eliminar**. Recargar fuerza la lectura de la
+**Actualizar, Renombrar, Eliminar**. Actualizar fuerza la lectura de la
 conversación persistida en la T160 y reemplaza la ventana de cinco
 mensajes en la Surf. **No repite el mensaje a GPT ni Claude** y no
 sincroniza conversaciones alojadas en las páginas web de los proveedores.
@@ -105,6 +105,12 @@ Las actualizaciones de estado se obtienen con las operaciones del
 usuario y al terminar una respuesta. La animación amarilla usa únicamente
 un temporizador GTK local, sin supervisión continua ni consultas
 periódicas a la T160.
+
+Cuando otro cliente de Surf AI trabaja sobre la **misma conversación
+de T160**, pulsar Actualizar trae sus mensajes nuevos y el título
+actual. La siguiente consulta utiliza el contexto reciente desde SQLite,
+sin reenvío del mensaje anterior. Esto no equivale a sincronizar
+automáticamente los chats alojados en la web de los proveedores.
 
 Contrato técnico, estados, compatibilidad y límites en
 `docs/SURF_AI_RELOAD_STATUS.md`.
