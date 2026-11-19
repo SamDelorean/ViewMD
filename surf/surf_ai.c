@@ -16,6 +16,8 @@
 
 typedef struct {
   GtkWidget *window, *input, *status, *send, *new_chat, *provider;
+  GtkWidget *sidebar, *session_list, *scroll, *mode_buttons[4];
+  gint mode;
   MarkydEditor *viewer;
   GString *transcript;
   gchar *session;
@@ -65,7 +67,8 @@ static gboolean apply_event(gpointer ptr) {
     ui->busy = FALSE;
     gtk_widget_set_sensitive(ui->send, TRUE);
     gtk_widget_set_sensitive(ui->new_chat, TRUE);
-    gtk_widget_set_sensitive(ui->provider, TRUE);
+    for (guint i = 0; i < 4; i++)
+      gtk_widget_set_sensitive(ui->mode_buttons[i], TRUE);
     gtk_label_set_text(GTK_LABEL(ui->status),
                        ev->error ? "Error del servidor" : "Listo");
     g_string_append(ui->transcript, "\n\n---\n\n");
@@ -185,8 +188,13 @@ static void on_send(GtkWidget *widget, gpointer ptr) {
     g_free(prompt);
     return;
   }
-  provider = gtk_combo_box_get_active_id(GTK_COMBO_BOX(ui->provider));
-  if (!provider) provider = "openai";
+  if (ui->mode == 1 || ui->mode == 3) {
+    gtk_label_set_text(GTK_LABEL(ui->status),
+      "Herramienta de codigo pendiente; requiere autorizacion expresa.");
+    g_free(prompt);
+    return;
+  }
+  provider = ui->mode == 2 ? "anthropic" : "openai";
 
   g_string_append_printf(ui->transcript, "### Tú\n\n%s\n\n### %s\n\n",
                          prompt, g_strcmp0(provider, "anthropic") == 0
@@ -197,7 +205,8 @@ static void on_send(GtkWidget *widget, gpointer ptr) {
   ui->busy = TRUE;
   gtk_widget_set_sensitive(ui->send, FALSE);
   gtk_widget_set_sensitive(ui->new_chat, FALSE);
-  gtk_widget_set_sensitive(ui->provider, FALSE);
+  for (guint i = 0; i < 4; i++)
+    gtk_widget_set_sensitive(ui->mode_buttons[i], FALSE);
 
   req = g_new0(Request, 1);
   req->ui = ui;
@@ -219,6 +228,55 @@ static gboolean on_input_key(GtkWidget *widget, GdkEventKey *event,
   return FALSE;
 }
 
+static void on_toggle_sidebar(GtkButton *button, gpointer ptr) {
+  SurfUI *ui = ptr;
+  (void)button;
+  gtk_revealer_set_reveal_child(GTK_REVEALER(ui->sidebar),
+    !gtk_revealer_get_reveal_child(GTK_REVEALER(ui->sidebar)));
+}
+
+static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
+  SurfUI *ui = ptr;
+  gint selected = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button),
+                                                   "surf-mode"));
+  if (!gtk_toggle_button_get_active(button)) {
+    if (ui->mode == selected) gtk_toggle_button_set_active(button, TRUE);
+    return;
+  }
+  ui->mode = selected;
+  for (gint i = 0; i < 4; i++) {
+    if (ui->mode_buttons[i] != GTK_WIDGET(button))
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui->mode_buttons[i]),
+                                   FALSE);
+  }
+  gtk_label_set_text(GTK_LABEL(ui->status),
+    (selected == 1 || selected == 3)
+    ? "Herramienta de codigo: integracion pendiente, sin ejecucion"
+    : "Proveedor de chat seleccionado");
+}
+
+static gboolean on_reader_key(GtkWidget *widget, GdkEventKey *event,
+                              gpointer ptr) {
+  SurfUI *ui = ptr;
+  GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(
+      GTK_SCROLLED_WINDOW(ui->scroll));
+  gdouble amount = 0;
+  (void)widget;
+  if (event->keyval == GDK_KEY_Up) amount = -38;
+  else if (event->keyval == GDK_KEY_Down) amount = 38;
+  else if (event->keyval == GDK_KEY_Page_Up)
+    amount = -gtk_adjustment_get_page_increment(adj);
+  else if (event->keyval == GDK_KEY_Page_Down)
+    amount = gtk_adjustment_get_page_increment(adj);
+  else return FALSE;
+  gtk_adjustment_set_value(adj,
+    CLAMP(gtk_adjustment_get_value(adj) + amount,
+      gtk_adjustment_get_lower(adj),
+      MAX(gtk_adjustment_get_lower(adj),
+          gtk_adjustment_get_upper(adj) - gtk_adjustment_get_page_size(adj))));
+  return TRUE;
+}
+
 static void on_new_chat(GtkWidget *widget, gpointer ptr) {
   SurfUI *ui = ptr;
   (void)widget;
@@ -235,6 +293,8 @@ static void on_new_chat(GtkWidget *widget, gpointer ptr) {
 int main(int argc, char **argv) {
   SurfUI ui = {0};
   GtkWidget *root, *header, *scroller, *input_scroller, *bottom, *label;
+  GtkWidget *workspace, *sidebar_box, *main_column, *toggle;
+  const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
   gtk_init(&argc, &argv);
   config = config_new();
   /* Do not read or alter the original ViewMD settings. */
@@ -254,31 +314,58 @@ int main(int argc, char **argv) {
   gtk_container_set_border_width(GTK_CONTAINER(root), 8);
   gtk_container_add(GTK_CONTAINER(ui.window), root);
 
-  header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
   gtk_box_pack_start(GTK_BOX(root), header, FALSE, FALSE, 0);
-  label = gtk_label_new("Surf AI  ·  T160");
-  gtk_box_pack_start(GTK_BOX(header), label, FALSE, FALSE, 0);
-  ui.provider = gtk_combo_box_text_new();
-  gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(ui.provider),
-                            "openai", "GPT");
-  gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(ui.provider),
-                            "anthropic", "Claude");
-  gtk_combo_box_set_active(GTK_COMBO_BOX(ui.provider), 0);
-  gtk_box_pack_start(GTK_BOX(header), ui.provider, FALSE, FALSE, 0);
-  ui.new_chat = gtk_button_new_with_label("Nueva conversación");
-  gtk_box_pack_end(GTK_BOX(header), ui.new_chat, FALSE, FALSE, 0);
+  toggle = gtk_button_new_with_label("☰");
+  gtk_widget_set_tooltip_text(toggle, "Mostrar u ocultar conversaciones");
+  gtk_box_pack_start(GTK_BOX(header), toggle, FALSE, FALSE, 0);
+  label = gtk_label_new("Surf AI");
+  gtk_box_pack_start(GTK_BOX(header), label, FALSE, FALSE, 6);
+  for (gint i = 0; i < 4; i++) {
+    ui.mode_buttons[i] = gtk_toggle_button_new_with_label(modes[i]);
+    g_object_set_data(G_OBJECT(ui.mode_buttons[i]), "surf-mode",
+                      GINT_TO_POINTER(i));
+    gtk_box_pack_start(GTK_BOX(header), ui.mode_buttons[i],
+                       FALSE, FALSE, 0);
+    g_signal_connect(ui.mode_buttons[i], "toggled",
+                     G_CALLBACK(on_mode_selected), &ui);
+  }
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui.mode_buttons[0]), TRUE);
+  workspace = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_box_pack_start(GTK_BOX(root), workspace, TRUE, TRUE, 0);
+  ui.sidebar = gtk_revealer_new();
+  gtk_revealer_set_transition_type(GTK_REVEALER(ui.sidebar),
+                                   GTK_REVEALER_TRANSITION_TYPE_SLIDE_RIGHT);
+  gtk_revealer_set_reveal_child(GTK_REVEALER(ui.sidebar), TRUE);
+  gtk_box_pack_start(GTK_BOX(workspace), ui.sidebar, FALSE, FALSE, 0);
+  sidebar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_size_request(sidebar_box, 245, -1);
+  gtk_container_add(GTK_CONTAINER(ui.sidebar), sidebar_box);
+  ui.new_chat = gtk_button_new_with_label("+ Nueva conversación");
+  gtk_box_pack_start(GTK_BOX(sidebar_box), ui.new_chat, FALSE, FALSE, 4);
   g_signal_connect(ui.new_chat, "clicked", G_CALLBACK(on_new_chat), &ui);
+  label = gtk_label_new("Conversaciones (historial remoto pendiente)");
+  gtk_label_set_xalign(GTK_LABEL(label), 0);
+  gtk_box_pack_start(GTK_BOX(sidebar_box), label, FALSE, FALSE, 4);
+  ui.session_list = gtk_list_box_new();
+  gtk_box_pack_start(GTK_BOX(sidebar_box), ui.session_list, TRUE, TRUE, 0);
+  g_signal_connect(toggle, "clicked", G_CALLBACK(on_toggle_sidebar), &ui);
 
+  main_column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_hexpand(main_column, TRUE);
+  gtk_box_pack_start(GTK_BOX(workspace), main_column, TRUE, TRUE, 6);
   scroller = gtk_scrolled_window_new(NULL, NULL);
+  ui.scroll = scroller;
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
-                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_box_pack_start(GTK_BOX(root), scroller, TRUE, TRUE, 0);
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
+  gtk_box_pack_start(GTK_BOX(main_column), scroller, TRUE, TRUE, 0);
   ui.viewer = markyd_editor_new(NULL);
   gtk_container_add(GTK_CONTAINER(scroller),
                     markyd_editor_get_widget(ui.viewer));
-
+  g_signal_connect(ui.viewer->text_view, "key-press-event",
+                   G_CALLBACK(on_reader_key), &ui);
   bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  gtk_box_pack_start(GTK_BOX(root), bottom, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(main_column), bottom, FALSE, FALSE, 0);
   input_scroller = gtk_scrolled_window_new(NULL, NULL);
   gtk_widget_set_size_request(input_scroller, -1, 92);
   gtk_widget_set_hexpand(input_scroller, TRUE);
@@ -294,7 +381,7 @@ int main(int argc, char **argv) {
 
   ui.status = gtk_label_new("T160 via tunel SSH local (127.0.0.1:8765)");
   gtk_label_set_xalign(GTK_LABEL(ui.status), 0);
-  gtk_box_pack_start(GTK_BOX(root), ui.status, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(main_column), ui.status, FALSE, FALSE, 0);
   on_new_chat(NULL, &ui);
   gtk_widget_show_all(ui.window);
   gtk_widget_grab_focus(ui.input);
