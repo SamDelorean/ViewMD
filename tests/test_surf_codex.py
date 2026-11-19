@@ -55,6 +55,7 @@ class CodexAdapterTest(unittest.TestCase):
             "ANTHROPIC_API_KEY": "must-not-be-used",
         })
         self.env.start()
+        self.actual_server_class = codex_adapter.AppServer
         self.adapter = mock.patch.object(
             codex_adapter, "AppServer", FakeServer)
         self.adapter.start()
@@ -170,7 +171,7 @@ class CodexAdapterTest(unittest.TestCase):
         self.assertIsNone(catalog.get_codex_thread("session"))
 
     def test_command_event_refused_before_sending_to_surf(self):
-        fake = codex_adapter.AppServer.__new__(codex_adapter.AppServer)
+        fake = self.actual_server_class.__new__(self.actual_server_class)
         fake.started_at = time.monotonic()
         fake.timeout = 30
         fake.process = mock.Mock()
