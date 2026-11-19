@@ -37,8 +37,10 @@
 - Smoke test de ventana v0.2: inició pero detectó una advertencia GTK por
   actualización temprana de la etiqueta de estado.
 - Corrección de esa advertencia incorporada en commit 268a2e21.
-- La recompilación y el smoke test final se ejecutan por separado; consultar
-  el log local antes de dar estado definitivo.
+- Corrección GTK compilada nuevamente en la Surf: **BUILD_PASS**.
+- Smoke test final de la ventana corregida: **GUI_SMOKE_PASS**, cierre
+  programado por timeout (143), sin Gtk-CRITICAL ni bibliotecas faltantes.
+- La verificación funcional completa con teclado y tacto permanece pendiente.
 
 ## Archivos de diagnóstico
 
