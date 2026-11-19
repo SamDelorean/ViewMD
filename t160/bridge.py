@@ -103,7 +103,7 @@ class Handler(socketserver.StreamRequestHandler):
             return
         fields = raw.rstrip(b"\r\n").split(b"\t", 3)
         if len(fields) != 4 or fields[0] not in (
-                b"ASK", b"HISTORY", b"LIST", b"RENAME", b"DELETE"):
+                b"ASK", b"HISTORY", b"LIST", b"RENAME", b"DELETE", b"RELOAD"):
             send(self, "ERROR", "Protocolo incorrecto")
             return
         try:
@@ -127,10 +127,23 @@ class Handler(socketserver.StreamRequestHandler):
                         rows, more = catalog.list_page(provider, int(updated), last_id)
                     except ValueError:
                         raise ValueError("Cursor de lista inválido")
-                for item_id, title, updated in rows:
-                    send(self, "SESSION", item_id + "\t" + str(updated) + "\t" + title)
+                for item_id, title, updated, status in rows:
+                    send(self, "SESSION", item_id + "\t" + str(updated)
+                         + "\t" + status + "\t" + title)
                 next_cursor = "{}:{}".format(rows[-1][2], rows[-1][0]) if more and rows else "-"
                 send(self, "NEXT", next_cursor)
+                send(self, "DONE")
+                return
+            if fields[0] == b"RELOAD":
+                if fields[3] != b"-":
+                    raise ValueError("Argumento de recarga inválido")
+                metadata, rows, more = catalog.snapshot(
+                    provider, session, PAGE_SIZE)
+                title, status, updated = metadata
+                send(self, "META", status + "\t" + str(updated) + "\t" + title)
+                for role, body in rows:
+                    send(self, "ITEM", role + "\t" + body)
+                send(self, "MORE", "1" if more else "0")
                 send(self, "DONE")
                 return
             if fields[0] == b"RENAME":
@@ -157,6 +170,7 @@ class Handler(socketserver.StreamRequestHandler):
             prompt = base64.b64decode(fields[3], validate=True).decode("utf-8")
             if not prompt.strip() or len(prompt) > 100000:
                 raise ValueError("Consulta vacía o demasiado extensa")
+            catalog.begin_request(provider, session, prompt[:60])
             previous = catalog.context(provider, session, MAX_TURNS * 2)
             history = previous[-MAX_TURNS * 2:] + [
                 {"role": "user", "content": prompt}
@@ -182,10 +196,14 @@ class Handler(socketserver.StreamRequestHandler):
                                 prompt, "".join(answer))
             send(self, "DONE")
         except urllib.error.HTTPError as exc:
+            if fields[0] == b"ASK":
+                catalog.mark_failed(provider, session)
             send(self, "ERROR", "API HTTP {}: {}".format(
                 exc.code, exc.reason))
         except (ValueError, UnicodeError, RuntimeError,
                 urllib.error.URLError, TimeoutError, OSError) as exc:
+            if fields[0] == b"ASK" and "provider" in locals() and "session" in locals():
+                catalog.mark_failed(provider, session)
             try:
                 send(self, "ERROR", str(exc)[:500])
             except OSError:
@@ -202,6 +220,7 @@ def main():
     parser.add_argument("--mock", action="store_true",
                         help="Respuestas locales de prueba, sin API ni coste")
     args = parser.parse_args()
+    catalog.recover_incomplete()
     with Bridge((HOST, PORT), Handler) as server:
         server.mock = args.mock
         print("Surf AI bridge en {}:{} (mock={})".format(
