@@ -15,6 +15,11 @@ import threading
 import urllib.error
 import urllib.request
 
+try:
+    from . import catalog
+except ImportError:
+    import catalog
+
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("SURF_AI_PORT", "8765"))
 MAX_LINE = 1024 * 1024
@@ -97,7 +102,8 @@ class Handler(socketserver.StreamRequestHandler):
         if not raw or len(raw) > MAX_LINE:
             return
         fields = raw.rstrip(b"\r\n").split(b"\t", 3)
-        if len(fields) != 4 or fields[0] not in (b"ASK", b"HISTORY"):
+        if len(fields) != 4 or fields[0] not in (
+                b"ASK", b"HISTORY", b"LIST", b"RENAME", b"DELETE"):
             send(self, "ERROR", "Protocolo incorrecto")
             return
         try:
@@ -109,6 +115,38 @@ class Handler(socketserver.StreamRequestHandler):
                     c.isalnum() or c in "-_" for c in session):
                 raise ValueError("Identificador de sesión inválido")
             ident = (session, provider)
+            if fields[0] == b"LIST":
+                cursor = fields[3].decode("ascii")
+                if cursor == "-":
+                    rows, more = catalog.list_page(provider)
+                else:
+                    try:
+                        updated, last_id = cursor.split(":", 1)
+                        if not updated.isdecimal() or len(last_id) > 80:
+                            raise ValueError()
+                        rows, more = catalog.list_page(provider, int(updated), last_id)
+                    except ValueError:
+                        raise ValueError("Cursor de lista inválido")
+                for item_id, title, updated in rows:
+                    payload = json.dumps(
+                        {"id": item_id, "title": title, "updated": updated},
+                        ensure_ascii=False)
+                    send(self, "SESSION", payload)
+                next_cursor = "{}:{}".format(rows[-1][2], rows[-1][0]) if more and rows else "-"
+                send(self, "NEXT", next_cursor)
+                send(self, "DONE")
+                return
+            if fields[0] == b"RENAME":
+                new_title = base64.b64decode(fields[3], validate=True).decode("utf-8")
+                send(self, "TITLE", catalog.rename(provider, session, new_title))
+                send(self, "DONE")
+                return
+            if fields[0] == b"DELETE":
+                catalog.soft_delete(provider, session)
+                with lock:
+                    sessions.pop(ident, None)
+                send(self, "DONE")
+                return
             if fields[0] == b"HISTORY":
                 offset = int(fields[3].decode("ascii"))
                 if offset < 0 or offset > MAX_STORED_MESSAGES:
@@ -152,6 +190,7 @@ class Handler(socketserver.StreamRequestHandler):
                     {"role": "user", "content": prompt},
                     {"role": "assistant", "content": "".join(answer)}
                 ])[-MAX_STORED_MESSAGES:]
+            catalog.touch(provider, session, prompt.strip()[:60])
             send(self, "DONE")
         except urllib.error.HTTPError as exc:
             send(self, "ERROR", "API HTTP {}: {}".format(
