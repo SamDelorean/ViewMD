@@ -29,7 +29,10 @@ El flujo no accede al historial alojado en chatgpt.com.
 
 Claude real permanece deshabilitado hasta disponer de una vía oficial
 compatible con suscripción que no produzca facturación adicional.
-**Codex y Claude Code no se ejecutaron**.
+**Actualización 18/11/2026:** Codex App Server ya está integrado en
+el chat de Surf AI con SIWC, conversación de código sin herramientas y
+sin claves API. Se validó una consulta real y la continuidad del
+historial; ver `docs/SURF_CODEX_NATIVE.md`. Claude Code sigue pendiente.
 
 ## Servicio principal T160
 
