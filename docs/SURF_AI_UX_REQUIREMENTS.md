@@ -34,15 +34,29 @@ desplazamiento por barra, teclado y tacto.
 La Surf utiliza su teclado de pantalla ya instalado (Onboard);
 el botón y teclado propios de Surf AI se retiraron del código.
 
+### Controles inferiores compactos (ajuste posterior)
+
+La fila independiente de «Mensajes anteriores» y «Volver a recientes»
+queda eliminada. Esas dos acciones se colocan **una encima de la otra**
+en una columna vertical junto al campo de texto, exactamente en el
+espacio que antes ocupaba el botón de teclado interno; cada control
+conserva una superficie horizontal y su función de paginación.
+**Enviar permanece a la derecha, sin cambios.** Esto recupera una
+fila de altura para el visor de conversación.
+
+Cambio guardado en la rama `surf-ai-client`; pendiente de compilación
+y prueba en ARMv7. El ajuste no autoriza un nuevo acceso remoto al equipo.
+
 **Estado:** esta distribución está incorporada a la rama de GitHub
 pero NO se ha recompilado ni instalado todavía en la Surf. No se
 autorizó Commander para compilar esta revisión.
 
-## Navegación superior (decisión del usuario)
+## Selector de modelos y herramientas
 
-La barra superior contiene cuatro botones independientes, visibles en todo
-momento: **GPT**, **Codex**, **Claude** y **Claude Code**. Claude Code es el
-agente de programación oficial de Anthropic; Claude identifica el chat general.
+Los cuatro selectores **GPT**, **Codex**, **Claude** y **Claude Code**
+están ahora en las dos primeras filas de la banda izquierda, no en una
+barra superior independiente. Claude Code es el agente de programación
+de Anthropic; Claude identifica el chat general.
 
 Cambiar pestañas cambia el contexto de interfaz pero **no ejecuta** herramientas.
 Codex y Claude Code tienen sus propios paneles de tareas, archivos, diffs,
