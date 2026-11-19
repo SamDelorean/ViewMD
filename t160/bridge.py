@@ -128,10 +128,7 @@ class Handler(socketserver.StreamRequestHandler):
                     except ValueError:
                         raise ValueError("Cursor de lista inválido")
                 for item_id, title, updated in rows:
-                    payload = json.dumps(
-                        {"id": item_id, "title": title, "updated": updated},
-                        ensure_ascii=False)
-                    send(self, "SESSION", payload)
+                    send(self, "SESSION", item_id + "\t" + str(updated) + "\t" + title)
                 next_cursor = "{}:{}".format(rows[-1][2], rows[-1][0]) if more and rows else "-"
                 send(self, "NEXT", next_cursor)
                 send(self, "DONE")
@@ -151,20 +148,16 @@ class Handler(socketserver.StreamRequestHandler):
                 offset = int(fields[3].decode("ascii"))
                 if offset < 0 or offset > MAX_STORED_MESSAGES:
                     raise ValueError("Desplazamiento fuera de rango")
-                with lock:
-                    saved = list(sessions.get(ident, []))
-                end = max(0, len(saved) - offset)
-                start = max(0, end - PAGE_SIZE)
-                for message in saved[start:end]:
-                    send(self, "ITEM", message["role"] + "\t" + message["content"])
-                send(self, "MORE", "1" if start > 0 else "0")
+                rows, more = catalog.get_messages(provider, session, offset, PAGE_SIZE)
+                for role, body in rows:
+                    send(self, "ITEM", role + "\t" + body)
+                send(self, "MORE", "1" if more else "0")
                 send(self, "DONE")
                 return
             prompt = base64.b64decode(fields[3], validate=True).decode("utf-8")
             if not prompt.strip() or len(prompt) > 100000:
                 raise ValueError("Consulta vacía o demasiado extensa")
-            with lock:
-                previous = list(sessions.get(ident, []))
+            previous = catalog.context(provider, session, MAX_TURNS * 2)
             history = previous[-MAX_TURNS * 2:] + [
                 {"role": "user", "content": prompt}
             ]
@@ -185,12 +178,8 @@ class Handler(socketserver.StreamRequestHandler):
                     answer.append(fragment)
             if not answer:
                 raise RuntimeError("La API no devolvió texto")
-            with lock:
-                sessions[ident] = (previous + [
-                    {"role": "user", "content": prompt},
-                    {"role": "assistant", "content": "".join(answer)}
-                ])[-MAX_STORED_MESSAGES:]
-            catalog.touch(provider, session, prompt.strip()[:60])
+            catalog.append_pair(provider, session, prompt.strip()[:60],
+                                prompt, "".join(answer))
             send(self, "DONE")
         except urllib.error.HTTPError as exc:
             send(self, "ERROR", "API HTTP {}: {}".format(
