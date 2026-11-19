@@ -404,7 +404,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
   GError *error = NULL;
   gchar *frame, *line, *result;
   GString *response = g_string_new("");
-  gboolean protocol_error = FALSE;
+  gboolean protocol_error = FALSE, done = FALSE;
   g_socket_client_set_timeout(client, 4);
   conn = g_socket_client_connect_to_host(client, BRIDGE_HOST, BRIDGE_PORT,
                                         NULL, &error);
@@ -425,6 +425,7 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
   g_data_input_stream_set_newline_type(input, G_DATA_STREAM_NEWLINE_TYPE_LF);
   while ((line = g_data_input_stream_read_line(input,NULL,NULL,&error))) {
     if (g_strcmp0(line, "DONE") == 0) {
+      done = TRUE;
       g_free(line);
       break;
     }
@@ -447,7 +448,9 @@ static gchar *catalog_exchange(SurfUI *ui, const gchar *op,
   g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
   g_object_unref(conn);
   g_object_unref(client);
-  if (protocol_error) {
+  if (protocol_error || !done) {
+    if (!protocol_error)
+      set_status(ui, "Respuesta incompleta de T160; intenta Recargar");
     g_string_free(response, TRUE);
     return NULL;
   }
@@ -464,9 +467,11 @@ failed:
   return NULL;
 }
 
-static void load_history(SurfUI *ui, guint offset) {
+static void load_history_internal(SurfUI *ui, guint offset,
+                                  gboolean preserve_unread) {
   if (ui->busy) return;
-  gchar *number = g_strdup_printf("%u", offset);
+  gchar *number = g_strdup_printf("%u%s", offset,
+                                   preserve_unread ? "u" : "");
   gchar *reply = catalog_exchange(ui, "HISTORY", ui->session, number);
   g_free(number);
   if (!reply) return;
@@ -495,7 +500,13 @@ static void load_history(SurfUI *ui, guint offset) {
   gtk_widget_set_sensitive(ui->older, more);
   gtk_widget_set_sensitive(ui->recent, offset > 0);
   schedule_render(ui);
+  if (!preserve_unread && offset == 0)
+    set_visible_session_state(ui, ui->session, "idle");
   g_free(reply);
+}
+
+static void load_history(SurfUI *ui, guint offset) {
+  load_history_internal(ui, offset, FALSE);
 }
 
 static void on_older(GtkButton *btn, gpointer ptr) {
@@ -741,7 +752,7 @@ static gboolean on_row_right_click(GtkWidget *row, GdkEventButton *event,
 
 static gboolean refresh_after_answer(gpointer ptr) {
   SurfUI *ui = ptr;
-  load_history(ui, 0);
+  load_history_internal(ui, 0, TRUE);
   load_catalog(ui, FALSE);
   return G_SOURCE_REMOVE;
 }
