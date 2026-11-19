@@ -4,6 +4,7 @@ Newest activity first (updated DESC, id DESC). No messages are transmitted
 when listing. Renames and soft deletes are scoped to (provider, session).
 """
 import os
+from contextlib import contextmanager
 import sqlite3
 import threading
 import time
@@ -14,6 +15,7 @@ PAGE_SIZE = 20
 LOCK = threading.RLock()
 
 
+@contextmanager
 def connection():
     path = os.path.abspath(DB_PATH)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -28,7 +30,11 @@ def connection():
         id TEXT NOT NULL, provider TEXT NOT NULL, idx INTEGER NOT NULL,
         role TEXT NOT NULL, content TEXT NOT NULL,
         PRIMARY KEY(id, provider, idx))""")
-    return db
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
 
 
 def touch(provider, session, title):
@@ -72,13 +78,14 @@ def rename(provider, session, new_title):
     return title
 
 
-def soft_delete(provider, session):
+def delete_session(provider, session):
     with LOCK, connection() as db:
-        cur = db.execute("""UPDATE conversations SET deleted=1
-             WHERE provider=? AND id=? AND deleted=0""",
-             (provider, session))
+        cur = db.execute("""DELETE FROM conversations
+             WHERE provider=? AND id=?""", (provider, session))
         if cur.rowcount != 1:
             raise ValueError("Conversación no encontrada")
+        db.execute("""DELETE FROM messages WHERE provider=? AND id=?""",
+                   (provider, session))
 
 
 def append_pair(provider, session, title, user_text, assistant_text):
