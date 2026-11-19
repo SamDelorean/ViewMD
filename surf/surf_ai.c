@@ -338,12 +338,13 @@ static void on_send(GtkWidget *widget, gpointer ptr) {
     g_free(prompt);
     return;
   }
-  if (ui->mode == 1 || ui->mode == 3) {
-    set_status(ui, "Herramienta de código pendiente; requiere autorización expresa.");
+  if (ui->mode == 3) {
+    set_status(ui, "Claude Code pendiente: requiere integración autorizada.");
     g_free(prompt);
     return;
   }
-  provider = ui->mode == 2 ? "anthropic" : "openai";
+  provider = ui->mode == 1 ? "codex" :
+             ui->mode == 2 ? "anthropic" : "openai";
 
   if (ui->new_session) {
     gchar *short_title = g_utf8_substring(
@@ -356,7 +357,9 @@ static void on_send(GtkWidget *widget, gpointer ptr) {
   }
 
   g_string_append_printf(ui->transcript, "### Tú\n\n%s\n\n### %s\n\n",
-                         prompt, g_strcmp0(provider, "anthropic") == 0
+                         prompt, g_strcmp0(provider, "codex") == 0
+                                       ? "Codex" :
+                                 g_strcmp0(provider, "anthropic") == 0
                                        ? "Claude" : "GPT");
   schedule_render(ui);
   gtk_text_buffer_set_text(buffer, "", -1);
@@ -392,6 +395,7 @@ static gboolean on_input_key(GtkWidget *widget, GdkEventKey *event,
 /* v0.2 catalog: only compact metadata travels to Surf; max 20 rows/page.
    A catalog operation is user-initiated, bounded to 4 seconds. */
 static const gchar *selected_provider(SurfUI *ui) {
+  if (ui->mode == 1) return "codex";
   return ui->mode == 2 || ui->mode == 3 ? "anthropic" : "openai";
 }
 
@@ -876,8 +880,10 @@ static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
   } else {
     update_window_title(ui);
   }
-  set_status(ui, (selected == 1 || selected == 3)
-      ? "Herramienta de código: integración pendiente, sin ejecución" : "");
+  set_status(ui, selected == 1
+      ? "Codex: conversación sobre código; sin herramientas ni comandos"
+      : selected == 3
+      ? "Claude Code: integración pendiente, sin ejecución" : "");
   if (ui->session_list && !ui->busy) load_catalog(ui, FALSE);
 }
 
