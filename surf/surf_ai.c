@@ -338,8 +338,10 @@ static void on_send(GtkWidget *widget, gpointer ptr) {
     g_free(prompt);
     return;
   }
-  if (ui->mode == 3) {
-    set_status(ui, "Claude Code pendiente: requiere integración autorizada.");
+  if (ui->mode == 1 || ui->mode == 3) {
+    set_status(ui, ui->mode == 1
+      ? "Codex se abre mediante escritorio remoto de la T160"
+      : "Claude Code pendiente: requiere integración autorizada.");
     g_free(prompt);
     return;
   }
@@ -854,12 +856,42 @@ static void on_toggle_sidebar(GtkButton *button, gpointer ptr) {
     gtk_widget_show(ui->sidebar_restore);
 }
 
+/* Codex runs in T160's real desktop through a separate RDP client.
+   Launch only on a deliberate press; do not spawn Codex App Server,
+   grant commands, or change the active GPT/Claude conversation. */
+static void launch_codex_remote(SurfUI *ui) {
+  gchar *argv[] = {
+    "/usr/bin/xfce4-terminal",
+    "--disable-server",
+    "--title=Codex — T160 remoto",
+    "--command=/home/user/.local/bin/surf-codex-rdp",
+    NULL
+  };
+  GError *error = NULL;
+  if (!g_spawn_async(NULL, argv, NULL,
+                     G_SPAWN_STDOUT_TO_DEV_NULL |
+                     G_SPAWN_STDERR_TO_DEV_NULL,
+                     NULL, NULL, NULL, &error)) {
+    set_status(ui, error ? error->message : "No se pudo abrir Codex remoto");
+    g_clear_error(&error);
+  }
+}
+
 static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
   SurfUI *ui = ptr;
   gint selected = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button),
                                                    "surf-mode"));
   if (!gtk_toggle_button_get_active(button)) {
     if (ui->mode == selected) gtk_toggle_button_set_active(button, TRUE);
+    return;
+  }
+  if (selected == 1) {
+    /* A launcher, not an active provider: keep the current conversation. */
+    gtk_toggle_button_set_active(button, FALSE);
+    if (ui->mode >= 0 && ui->mode < 4)
+      gtk_toggle_button_set_active(
+          GTK_TOGGLE_BUTTON(ui->mode_buttons[ui->mode]), TRUE);
+    launch_codex_remote(ui);
     return;
   }
   gboolean changed = ui->mode_initialized && ui->mode != selected;
@@ -880,9 +912,7 @@ static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
   } else {
     update_window_title(ui);
   }
-  set_status(ui, selected == 1
-      ? "Codex: conversación sobre código; sin herramientas ni comandos"
-      : selected == 3
+  set_status(ui, selected == 3
       ? "Claude Code: integración pendiente, sin ejecución" : "");
   if (ui->session_list && !ui->busy) load_catalog(ui, FALSE);
 }
@@ -1048,6 +1078,9 @@ int main(int argc, char **argv) {
     gtk_widget_set_size_request(ui.mode_buttons[i], -1, 46);
     g_object_set_data(G_OBJECT(ui.mode_buttons[i]), "surf-mode",
                       GINT_TO_POINTER(i));
+    if (i == 1)
+      gtk_widget_set_tooltip_text(ui.mode_buttons[i],
+          "Abrir escritorio remoto de la T160 para usar Codex");
     gtk_box_pack_start(GTK_BOX(row), ui.mode_buttons[i], TRUE, TRUE, 0);
     g_signal_connect(ui.mode_buttons[i], "toggled",
                      G_CALLBACK(on_mode_selected), &ui);
