@@ -2,6 +2,23 @@
 
 Fecha: 2026-11-18. Estado: **requisitos definidos; sin implementación completa**.
 
+## Codex mediante escritorio remoto (18-11-2026)
+
+Por decisión del usuario, el botón **Codex** ahora inicia un cliente
+FreeRDP en una ventana independiente para controlar el escritorio
+GNOME de la T160. La funcionalidad no se integra con el catálogo de
+conversaciones GTK3 y **no ejecuta agentes automáticamente**.
+La selección previa de GPT/Claude y su transcripción permanecen intactas.
+No se utiliza el adaptador experimental Codex App Server del repositorio.
+
+- Cliente Surface RT: `~/.local/bin/surf-codex-rdp`.
+- Acceso de menú: `surf-codex-rdp.desktop`.
+- Servidor: GNOME Remote Desktop en T160, RDP con TLS y credenciales
+  independientes. No se guarda la contraseña en Surf.
+- Comprobación de uso real en pantalla con contraseña auténtica:
+  pendiente de prueba manual.
+- Procedimiento y límites de crédito en `docs/SURF_CODEX_RDP.md`.
+
 ## Objetivo principal
 
 Cliente nativo GTK3 de Surface RT con experiencia de trabajo lo más próxima
