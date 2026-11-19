@@ -731,6 +731,23 @@ static gboolean on_reader_key(GtkWidget *widget, GdkEventKey *event,
   return TRUE;
 }
 
+/* Single-shot geometry audit, opt-in with SURF_AI_LAYOUT_AUDIT=1.
+   Does not watch, sample repeatedly, or modify the user session. */
+static gboolean audit_layout_once(gpointer ptr) {
+  SurfUI *ui = ptr;
+  GtkPaned *split = GTK_PANED(ui->splitter);
+  GtkWidget *nav = gtk_paned_get_child1(split);
+  GtkWidget *body = gtk_paned_get_child2(split);
+  g_print("SURF_LAYOUT split=%d navigation=%d sidebar=%d list=%d content=%d divider=%d\n",
+      gtk_widget_get_allocated_width(ui->splitter),
+      gtk_widget_get_allocated_width(nav),
+      gtk_widget_get_allocated_width(ui->sidebar),
+      gtk_widget_get_allocated_width(ui->session_list),
+      gtk_widget_get_allocated_width(body),
+      gtk_paned_get_position(split));
+  return G_SOURCE_REMOVE;
+}
+
 static void on_new_chat(GtkWidget *widget, gpointer ptr) {
   SurfUI *ui = ptr;
   (void)widget;
@@ -924,6 +941,8 @@ int main(int argc, char **argv) {
   on_new_chat(NULL, &ui);
   gtk_widget_show_all(ui.window);
   load_catalog(&ui, FALSE);
+  if (g_getenv("SURF_AI_LAYOUT_AUDIT"))
+    g_timeout_add(800, audit_layout_once, &ui);
   gtk_widget_grab_focus(ui.input);
   gtk_main();
   /* Background worker is intentionally owned by the process until exit. */
