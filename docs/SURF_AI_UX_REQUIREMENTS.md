@@ -9,6 +9,35 @@ posible a ChatGPT, Codex y Claude, sin navegador pesado en Surface.
 T160 mantiene sesiones, herramientas, modelos y archivos. La continuidad real
 de proyectos y conversaciones tiene prioridad sobre el simple chat.
 
+## Distribución compacta aprobada (2026-11-18)
+
+La barra superior independiente queda **eliminada** para ampliar la
+conversación hasta el borde superior del área principal.
+
+La banda izquierda contiene, en orden vertical:
+
+- **Fila 1:** ☰ Menú | GPT | Codex
+- **Fila 2:** Claude | Claude Code
+- **Fila 3:** + Nueva conversación
+- **Debajo:** lista de conversaciones, sin leyenda de encabezado.
+
+Se retiran de la superficie gráfica las leyendas «Surf AI» y
+«Conversaciones · recientes primero». El orden interno del listado
+continúa siendo por actividad reciente descendente y sólo carga
+20 títulos por página desde T160.
+
+Al plegar la banda izquierda permanece **un botón ☰ compacto**, fuera
+del panel oculto, para volver a desplegarla. El área de conversación
+ocupa la altura completa disponible, con entrada de texto abajo y
+desplazamiento por barra, teclado y tacto.
+
+La Surf utiliza su teclado de pantalla ya instalado (Onboard);
+el botón y teclado propios de Surf AI se retiraron del código.
+
+**Estado:** esta distribución está incorporada a la rama de GitHub
+pero NO se ha recompilado ni instalado todavía en la Surf. No se
+autorizó Commander para compilar esta revisión.
+
 ## Navegación superior (decisión del usuario)
 
 La barra superior contiene cuatro botones independientes, visibles en todo
