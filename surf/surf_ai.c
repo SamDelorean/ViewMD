@@ -672,6 +672,7 @@ int main(int argc, char **argv) {
   ui.pinch_start_pt = 13;
   ui.session = g_uuid_string_random();
   ui.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  gtk_window_set_icon_name(GTK_WINDOW(ui.window), "surf-ai");
   gtk_window_set_title(GTK_WINDOW(ui.window), "Surf AI");
   gtk_window_set_default_size(GTK_WINDOW(ui.window), 1024, 680);
   gtk_window_maximize(GTK_WINDOW(ui.window));
