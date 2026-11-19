@@ -14,7 +14,7 @@ plegable y conversación principal a la derecha.
 | Toque sencillo | GtkButton, GtkListBoxRow, GtkTextView |
 | Deslizamiento | GtkScrolledWindow con kinetic-scrolling en lista e historial |
 | Barra visible | overlay-scrolling desactivado en ambas zonas |
-| Pulsación prolongada | GtkGestureLongPress, menú Renombrar / Eliminar |
+| Clic derecho y pulsación prolongada | Menú contextual compartido con Renombrar / Eliminar |
 | Borrado | Diálogo modal con confirmación explícita |
 | Pinza de dos dedos | GtkGestureZoom y CSS para fuente de 11 a 24 pt |
 | Entrada de texto | Campo GTK3 compatible con teclado físico y teclado en pantalla de postmarketOS/XFCE4 |
@@ -26,7 +26,7 @@ del código del cliente. La entrada utiliza el teclado de pantalla propio
 de la Surf (Onboard está instalado). No se modifica su configuración;
 se conserva el campo GTK3 estándar para recibir el texto.
 
-La pulsación prolongada sólo abre el menú; no modifica ni elimina nada
+El clic derecho o la pulsación prolongada sólo abren el menú; no modifican ni eliminan nada
 sin una acción adicional del usuario. La eliminación requiere confirmación.
 
 ## Auditoría táctil (solo lectura)
@@ -43,7 +43,8 @@ Comprueba dispositivos de entrada y xinput si ya estuviera instalado.
 1. Confirmar que el kernel y Xorg/libinput reporten eventos táctiles.
 2. Probar toque simple en los cuatro botones superiores.
 3. Arrastrar verticalmente con un dedo en historial y lista de conversaciones.
-4. Mantener pulsado un título y abrir Renombrar/Eliminar; cancelar borrado.
+4. Probar clic derecho y pulsación prolongada sobre un título; abrir
+   Renombrar/Eliminar sin cargar mensajes, y cancelar el borrado.
 5. Probar pinza de dos dedos y comprobar cambio de fuente sin recargar mensajes.
 6. Enfocar el cuadro de entrada y utilizar el teclado en pantalla del sistema para escribir caracteres españoles y borrar texto.
 7. Probar teclado físico, flechas, RePág/AvPág, Ctrl+Enter y ratón.
