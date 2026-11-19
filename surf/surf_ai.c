@@ -21,7 +21,6 @@ typedef struct {
   gchar *list_cursor;
   guint history_offset;
   gint mode;
-  gboolean suppress_selection;
   gint reader_font_pt, pinch_start_pt;
   GtkCssProvider *reader_css;
   MarkydEditor *viewer;
@@ -308,10 +307,6 @@ failed:
   return NULL;
 }
 
-static GtkListBoxRow *selected_row(SurfUI *ui) {
-  return gtk_list_box_get_selected_row(GTK_LIST_BOX(ui->session_list));
-}
-
 static void load_history(SurfUI *ui, guint offset) {
   if (ui->busy) return;
   gchar *number = g_strdup_printf("%u", offset);
@@ -360,7 +355,7 @@ static void on_recent(GtkButton *btn, gpointer ptr) {
 static void on_session_selected(GtkListBox *box, GtkListBoxRow *row,
                                 gpointer ptr) {
   SurfUI *ui = ptr; (void)box;
-  if (!row || ui->busy || ui->suppress_selection) return;
+  if (!row || ui->busy) return;
   const gchar *id = g_object_get_data(G_OBJECT(row), "session-id");
   if (!id) return;
   g_free(ui->session);
@@ -372,6 +367,7 @@ static void on_row_long_press(GtkGestureLongPress *gesture,
                               gdouble x, gdouble y, gpointer ptr);
 static gboolean on_row_right_click(GtkWidget *row,
                                    GdkEventButton *event, gpointer ptr);
+static void on_more_clicked(GtkButton *button, gpointer ptr);
 
 static void load_catalog(SurfUI *ui, gboolean append) {
   if (ui->busy || !ui->session_list) return;
@@ -393,15 +389,23 @@ static void load_catalog(SurfUI *ui, gboolean append) {
       gchar **fields = g_strsplit(decoded, "\t", 3);
       if (fields[0] && fields[1] && fields[2]) {
         GtkWidget *row = gtk_list_box_row_new();
+        GtkWidget *cell = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         GtkWidget *text = gtk_label_new(fields[2]);
+        GtkWidget *more = gtk_button_new_with_label("⋯");
         gtk_label_set_xalign(GTK_LABEL(text), 0);
         gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
-        gtk_widget_set_margin_start(text, 5);
-        gtk_widget_set_margin_end(text, 5);
-        gtk_widget_set_margin_top(text, 6);
-        gtk_widget_set_margin_bottom(text, 6);
-        gtk_container_add(GTK_CONTAINER(row), text);
+        gtk_label_set_max_width_chars(GTK_LABEL(text), 22);
+        gtk_widget_set_hexpand(text, TRUE);
+        gtk_widget_set_margin_start(text, 7);
+        gtk_widget_set_margin_end(text, 2);
+        gtk_box_pack_start(GTK_BOX(cell), text, TRUE, TRUE, 0);
+        gtk_widget_set_size_request(more, 36, 40);
+        gtk_button_set_relief(GTK_BUTTON(more), GTK_RELIEF_NONE);
+        gtk_widget_set_tooltip_text(more, "Opciones de esta conversación");
+        gtk_box_pack_end(GTK_BOX(cell), more, FALSE, FALSE, 0);
+        gtk_container_add(GTK_CONTAINER(row), cell);
         gtk_widget_set_size_request(row, -1, 47);
+        g_signal_connect(more, "clicked", G_CALLBACK(on_more_clicked), ui);
         gtk_widget_add_events(row, GDK_BUTTON_PRESS_MASK);
         g_signal_connect(row, "button-press-event",
                          G_CALLBACK(on_row_right_click), ui);
@@ -411,6 +415,8 @@ static void load_catalog(SurfUI *ui, gboolean append) {
                          G_CALLBACK(on_row_long_press), ui);
         g_object_set_data_full(G_OBJECT(row), "session-id",
                                g_strdup(fields[0]), g_free);
+        g_object_set_data_full(G_OBJECT(row), "session-title",
+                               g_strdup(fields[2]), g_free);
         gtk_list_box_insert(GTK_LIST_BOX(ui->session_list), row, -1);
       }
       g_strfreev(fields);
@@ -431,20 +437,26 @@ static void on_load_more(GtkButton *btn, gpointer ptr) {
   (void)btn; load_catalog(ptr, TRUE);
 }
 
-static void on_rename(GtkButton *btn, gpointer ptr) {
-  SurfUI *ui = ptr; (void)btn;
-  GtkListBoxRow *row = selected_row(ui);
-  if (!row || ui->busy) return;
-  const gchar *id = g_object_get_data(G_OBJECT(row), "session-id");
+/* The menu carries its own target row: no selection change or history load. */
+static void on_rename(GtkButton *button, gpointer ptr) {
+  SurfUI *ui = ptr;
+  if (ui->busy) return;
+  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button),
+                                               GTK_TYPE_POPOVER);
+  if (!popover) return;
+  GtkWidget *row = g_object_get_data(G_OBJECT(popover), "surf-target-row");
+  if (!GTK_IS_LIST_BOX_ROW(row)) return;
+  gchar *id = g_strdup(g_object_get_data(G_OBJECT(row), "session-id"));
+  gchar *old_title = g_strdup(g_object_get_data(G_OBJECT(row), "session-title"));
+  gtk_widget_destroy(popover);
+  if (!id || !old_title) { g_free(id); g_free(old_title); return; }
+
   GtkWidget *dialog = gtk_dialog_new_with_buttons(
       "Renombrar conversación", GTK_WINDOW(ui->window), GTK_DIALOG_MODAL,
       "_Cancelar", GTK_RESPONSE_CANCEL, "_Guardar", GTK_RESPONSE_OK, NULL);
   GtkWidget *entry = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(entry), 100);
-  GtkWidget *row_text = gtk_bin_get_child(GTK_BIN(row));
-  gtk_entry_set_text(GTK_ENTRY(entry),
-    GTK_IS_LABEL(row_text) ? gtk_label_get_text(GTK_LABEL(row_text))
-                           : "Conversación");
+  gtk_entry_set_text(GTK_ENTRY(entry), old_title);
   gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(
                         GTK_DIALOG(dialog))), entry);
   gtk_widget_show_all(dialog);
@@ -453,19 +465,29 @@ static void on_rename(GtkButton *btn, gpointer ptr) {
     if (*title) {
       gchar *encoded = g_base64_encode((const guchar *)title, strlen(title));
       gchar *answer = catalog_exchange(ui, "RENAME", id, encoded);
+      if (answer && g_str_has_prefix(answer, "TITLE\t"))
+        load_catalog(ui, FALSE);
       g_free(answer);
       g_free(encoded);
-      load_catalog(ui, FALSE);
     }
   }
   gtk_widget_destroy(dialog);
+  g_free(old_title);
+  g_free(id);
 }
 
-static void on_delete(GtkButton *btn, gpointer ptr) {
-  SurfUI *ui = ptr; (void)btn;
-  GtkListBoxRow *row = selected_row(ui);
-  if (!row || ui->busy) return;
+static void on_delete(GtkButton *button, gpointer ptr) {
+  SurfUI *ui = ptr;
+  if (ui->busy) return;
+  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button),
+                                               GTK_TYPE_POPOVER);
+  if (!popover) return;
+  GtkWidget *row = g_object_get_data(G_OBJECT(popover), "surf-target-row");
+  if (!GTK_IS_LIST_BOX_ROW(row)) return;
   gchar *id = g_strdup(g_object_get_data(G_OBJECT(row), "session-id"));
+  gtk_widget_destroy(popover);
+  if (!id) return;
+
   GtkWidget *dialog = gtk_message_dialog_new(
       GTK_WINDOW(ui->window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING,
       GTK_BUTTONS_NONE, "¿Eliminar esta conversación?");
@@ -476,67 +498,58 @@ static void on_delete(GtkButton *btn, gpointer ptr) {
                          "_Eliminar", GTK_RESPONSE_ACCEPT, NULL);
   if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
     gchar *answer = catalog_exchange(ui, "DELETE", id, "-");
-    g_free(answer);
-    if (g_strcmp0(ui->session, id) == 0) {
-      g_free(ui->session);
-      ui->session = g_uuid_string_random();
-      g_string_assign(ui->transcript, "# Surf AI\n\nNueva conversación.\n");
-      schedule_render(ui);
+    /* A successful DELETE returns only DONE; keep ERROR distinct below. */
+    if (answer) {
+      if (g_strcmp0(ui->session, id) == 0) {
+        g_free(ui->session);
+        ui->session = g_uuid_string_random();
+        g_string_assign(ui->transcript, "# Surf AI\n\nNueva conversación.\n");
+        schedule_render(ui);
+      }
+      load_catalog(ui, FALSE);
     }
-    load_catalog(ui, FALSE);
+    g_free(answer);
   }
   gtk_widget_destroy(dialog);
   g_free(id);
 }
 
-/* Long touch opens contextual actions without fetching a conversation. */
-static void on_touch_rename(GtkButton *button, gpointer ptr) {
-  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button),
-                                               GTK_TYPE_POPOVER);
-  if (popover) gtk_widget_destroy(popover);
-  on_rename(button, ptr);
-}
-
-static void on_touch_delete(GtkButton *button, gpointer ptr) {
-  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button),
-                                               GTK_TYPE_POPOVER);
-  if (popover) gtk_widget_destroy(popover);
-  on_delete(button, ptr);
-}
-
-/* Both pointer secondary-click and a long touch use the same menu.
-   Selecting the row for the menu must never fetch its history. */
 static void show_row_actions(SurfUI *ui, GtkWidget *row,
-                             gdouble x, gdouble y) {
+                             GtkWidget *anchor, gdouble x, gdouble y,
+                             gboolean point_to_row) {
   if (!GTK_IS_LIST_BOX_ROW(row) || ui->busy) return;
-  ui->suppress_selection = TRUE;
-  gtk_list_box_select_row(GTK_LIST_BOX(ui->session_list),
-                          GTK_LIST_BOX_ROW(row));
-  ui->suppress_selection = FALSE;
-
-  GtkWidget *popover = gtk_popover_new(row);
+  GtkWidget *popover = gtk_popover_new(anchor);
   GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
   GtkWidget *rename = gtk_button_new_with_label("Renombrar");
   GtkWidget *remove = gtk_button_new_with_label("Eliminar...");
-  GdkRectangle point = {(gint)x, (gint)y, 1, 1};
-  gtk_popover_set_pointing_to(GTK_POPOVER(popover), &point);
+  g_object_set_data(G_OBJECT(popover), "surf-target-row", row);
+  if (point_to_row) {
+    GdkRectangle point = {(gint)x, (gint)y, 1, 1};
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &point);
+  }
   gtk_container_set_border_width(GTK_CONTAINER(actions), 8);
   gtk_widget_set_size_request(rename, 130, 46);
   gtk_widget_set_size_request(remove, 130, 46);
   gtk_container_add(GTK_CONTAINER(popover), actions);
   gtk_box_pack_start(GTK_BOX(actions), rename, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(actions), remove, FALSE, FALSE, 0);
-  g_signal_connect(rename, "clicked", G_CALLBACK(on_touch_rename), ui);
-  g_signal_connect(remove, "clicked", G_CALLBACK(on_touch_delete), ui);
+  g_signal_connect(rename, "clicked", G_CALLBACK(on_rename), ui);
+  g_signal_connect(remove, "clicked", G_CALLBACK(on_delete), ui);
   gtk_widget_show_all(popover);
   gtk_popover_popup(GTK_POPOVER(popover));
+}
+
+static void on_more_clicked(GtkButton *button, gpointer ptr) {
+  GtkWidget *row = gtk_widget_get_ancestor(GTK_WIDGET(button),
+                                           GTK_TYPE_LIST_BOX_ROW);
+  show_row_actions(ptr, row, GTK_WIDGET(button), 0, 0, FALSE);
 }
 
 static void on_row_long_press(GtkGestureLongPress *gesture, gdouble x,
                               gdouble y, gpointer ptr) {
   GtkWidget *row = gtk_event_controller_get_widget(
       GTK_EVENT_CONTROLLER(gesture));
-  show_row_actions(ptr, row, x, y);
+  show_row_actions(ptr, row, row, x, y, TRUE);
 }
 
 static gboolean on_row_right_click(GtkWidget *row, GdkEventButton *event,
@@ -546,7 +559,7 @@ static gboolean on_row_right_click(GtkWidget *row, GdkEventButton *event,
     return FALSE;
   SurfUI *ui = ptr;
   if (ui->busy) return TRUE;
-  show_row_actions(ui, row, event->x, event->y);
+  show_row_actions(ui, row, row, event->x, event->y, TRUE);
   return TRUE;
 }
 
