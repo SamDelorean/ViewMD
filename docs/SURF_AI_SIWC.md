@@ -1,132 +1,140 @@
-# Surf AI — Inicio de sesión con ChatGPT sin facturación API
+# Surf AI — ChatGPT real sin clave API de pago
 
-Fecha: 2026-11-18. Estado: **módulo preparado y verificado sin cuenta real**.
-Ruta de código: \`t160/siwc_auth.py\` (Python 3, PyJWT); bridge:
-\`t160/bridge.py\`. Rama \`surf-ai-client\`.
+Estado: **operativo en T160 y probado desde Surf** (18 de noviembre de 2026).
+Rama: `surf-ai-client`. Cliente Surf: GTK3 nativo ARMv7.
 
-## Objetivo
+## Autenticación y facturación
 
-Autenticar el servidor T160 de Surf AI con la cuenta **ChatGPT** del
-propietario usando **Sign in with ChatGPT (SIWC)** de OpenAI para
-clientes de código abierto que funcionan localmente. No pedir ni
-almacenar \`OPENAI_API_KEY\` ni \`ANTHROPIC_API_KEY\`, ni permitir
-un fallback a claves de API de pago. Surface RT sigue siendo la GUI
-GTK3 y no recibe credenciales ni ejecuta agentes.
+Se utilizó **Sign in with ChatGPT** (OAuth Authorization Code + PKCE)
+y consentimiento específico para `chatgpt.tokens.use.direct`.
+T160 guarda las credenciales OAuth únicamente en
+`~/.config/surf-ai/siwc/` (directorio 0700, perfil 0600). Surf no ve
+los tokens ni las claves privadas.
 
-**Límite:** la autorización usa cuota del plan ChatGPT cuando el usuario
-tiene un plan elegible y autoriza el permiso
-\`chatgpt.tokens.use.direct\`. Se aplican los límites de ese plan;
-no se accede al historial de chatgpt.com. Las llamadas pueden consumir
-cuota del plan y, según configuración de ChatGPT, créditos disponibles.
-Para evitar consumo de créditos no deseado, revisar los límites de
-uso de aplicaciones en ChatGPT > Configuración > Uso antes de autorizar.
-No existe una garantía de acceso si el plan pierde elegibilidad.
+El puente **no usa `OPENAI_API_KEY` ni `ANTHROPIC_API_KEY`** ni tiene
+fallback a facturación API. La inferencia GPT pasa por
+`https://api.openai.com/v1/responses` con token OAuth, `store=false`
+y `stream=true`, aceptando éxito sólo después de
+`response.completed`. El modelo seleccionado de la lista autorizada
+por la cuenta es `gpt-6.2-sol` (**GPT-6.2-Sol**).
 
-Fuentes oficiales, consultadas el 18/11/2026:
+**Importante:** las solicitudes utilizan los límites del plan ChatGPT.
+OpenAI ofrece configuración por aplicación en **ChatGPT → Settings →
+Usage** para administrar el uso del plan y los créditos disponibles.
+El puente no puede comprobar ni modificar directamente esos límites.
+Para respetar la condición de evitar gastos adicionales, no se han
+configurado claves de API ni compras de créditos. Revisar y limitar
+en ChatGPT cualquier uso de créditos que no se desee autorizar.
+El flujo no accede al historial alojado en chatgpt.com.
+
+Claude real permanece deshabilitado hasta disponer de una vía oficial
+compatible con suscripción que no produzca facturación adicional.
+**Codex y Claude Code no se ejecutaron**.
+
+## Servicio principal T160
+
+Archivo de unidad en repositorio:
+`t160/surf-ai-bridge.service`.
+
+- Instalado como servicio de usuario:
+  `~/.config/systemd/user/surf-ai-bridge.service`.
+- Configuración privada local:
+  `~/.config/surf-ai/bridge.env` (0600), contiene
+  `SURF_OPENAI_MODEL=gpt-6.2-sol`, sin claves API.
+- Servicio **activo y habilitado** mediante `systemctl --user enable --now`.
+- `Restart=on-failure`, sin `--mock`; tras reiniciar la T160 su
+  usuario dispone de `Linger=yes` y arranca la unidad.
+- Escucha exclusivamente en `127.0.0.1:8765`, no en la red externa.
+- No realiza consultas ni consume cuota al iniciar: sólo ante una
+  operación `ASK` originada por un cliente.
+
+Comprobación sin secretos en T160:
+
+```sh
+cd ~/Projects/surf-ai/ViewMD
+python3 -m t160.siwc_auth status
+python3 -m t160.siwc_auth models
+systemctl --user status surf-ai-bridge.service
+```
+
+## Transporte SSH dedicado
+
+Unidad de sistema T160:
+`t160/surf-ai-sshd.service`, instalada y habilitada como
+`/etc/systemd/system/surf-ai-sshd.service`.
+
+Usa la configuración dedicada
+`~/Projects/surf-ai/ssh/sshd_config` para escuchar
+`192.168.100.7:2222`, con autenticación exclusivamente por clave,
+sin contraseña, shell interactiva, TTY ni agente, y sólo permite
+reenvío local a `127.0.0.1:8765`. Se preservó la clave de host
+existente, por lo que Surf mantiene la comprobación estricta de
+huella SSH.
+
+En Surf, `scripts/surf-ai-ssh-tunnel.sh` mantiene el reenvío hacia la
+T160. El script usa `flock` para impedir túneles duplicados,
+`ServerAliveInterval=30` y un retardo de 15 segundos para reconectar
+sólo cuando SSH se desconecta. La bitácora está acotada a 64 KiB.
+No consulta el estado de las conversaciones ni realiza peticiones a
+los modelos.
+
+El arranque gráfico de XFCE4 se instaló como:
+`~/.config/autostart/surf-ai-tunnel.desktop`, con
+`Exec=/bin/sh /home/user/Projects/SurfAI/ViewMD/scripts/surf-ai-ssh-tunnel.sh`.
+
+**Nota:** se validaron el túnel y el archivo de autoinicio en la
+sesión actual. No se reiniciaron físicamente ambas máquinas para
+comprobar un ciclo completo de arranque.
+
+## Pruebas de aceptación y persistencia
+
+- 26 pruebas Python de SIWC, JWT, seguridad, almacenamiento, bridge y
+  SQLite: **PASS** (sin consumo real durante la batería).
+- Login real en T160: perfil autorizado, `chatgpt.tokens.use.direct`
+  concedido; catálogo de 10 modelos disponible.
+- Solicitud de inferencia directa T160 → GPT-6.2-Sol:
+  **PASS**, respuesta «Surf AI conectado.».
+- Prueba completa desde Surf por su túnel SSH:
+  `ASK` real → respuesta «Surf AI en línea.» →
+  `LIST` (`ready`) → `RELOAD` (`idle`) →
+  dos mensajes recuperados → segundo `RELOAD` sin duplicación →
+  `DELETE` de la conversación temporal. **PASS**.
+- La prueba de reconexión del nuevo supervisor se limitó a
+  establecer el túnel y consultar `LIST` con éxito.
+- Base SQLite de conversaciones existente respaldada y verificada
+  antes de activar el servicio:
+  `~/Projects/surf-ai/backups/sessions-before-siwc-live-20261118-224156.sqlite3`.
+  En ese momento: cuatro conversaciones y 30 mensajes.
+- No se reescribió el ejecutable GTK3 de Surf; ya era compatible con
+  el protocolo `ASK/LIST/HISTORY/RELOAD`.
+
+## Recuperación y diagnóstico
+
+Si GPT deja de responder, revisar en orden:
+
+1. En T160: `systemctl --user is-active surf-ai-bridge.service`.
+2. En T160: `systemctl is-active surf-ai-sshd.service`.
+3. En Surf: comprobar que existe el proceso
+   `scripts/surf-ai-ssh-tunnel.sh` y que su puerto local 8765
+   responde a `LIST`.
+4. En T160: `python3 -m t160.siwc_auth status`; si el permiso expiró
+   o fue revocado, reautorizar manualmente desde el navegador.
+5. Consultar **Settings → Usage** si se supera un límite de plan
+   o de la aplicación. No introducir una API key como alternativa.
+
+Si se desea suspender GPT real sin perder la cuenta ni el historial:
+
+```sh
+systemctl --user stop surf-ai-bridge.service
+```
+
+Esto no revoca los tokens: la desconexión de la cuenta se administra
+desde ChatGPT y debe hacerse por decisión del usuario.
+
+## Referencias oficiales
 
 - https://developers.openai.com/siwc/token-sharing-open-source/
 - https://developers.openai.com/siwc/token-sharing-open-source/sign-in
 - https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions
 - https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
-- https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
-
-## Cómo iniciar sesión (única intervención manual)
-
-**En una terminal de la T160, con un navegador abierto en el mismo
-equipo**, ejecutar:
-
-\`\`\`sh
-cd /home/spc/Projects/surf-ai/ViewMD
-python3 -m t160.siwc_auth status
-python3 -m t160.siwc_auth login
-\`\`\`
-
-La orden \`login\` crea un identificador estable de la T160, inicia un
-servidor **temporal sólo en 127.0.0.1** con puerto libre, prepara
-OAuth Authorization Code con PKCE S256, state y nonce aleatorios, y
-abre el navegador con el enlace de OpenAI. No utilizar la URL de
-retorno en otro dispositivo sin reenviar correctamente el puerto
-de callback hacia la T160. No compartir enlaces de autorización con
-terceros.
-
-En el navegador oficial, elegir la cuenta y autorizar explícitamente
-uso del plan ChatGPT para **Surf AI**. El permiso solicitado es
-\`openid profile email offline_access resource.invoke
-chatgpt.tokens.use.direct\`. El navegador vuelve a
-\`http://127.0.0.1:<puerto>/auth/callback\`. La terminal verifica state
-y nonce, recibe un \`client_id\` emitido por OpenAI, canjea el código
-con el mismo PKCE y valida firma JWT RS256 con JWKS, issuer,
-audiencia y caducidad. **No se puede iniciar sesión por el usuario
-ni obtener su contraseña desde ChatGPT.**
-
-Si autorizó correctamente, aparece «ChatGPT conectado».
-No se activa la inferencia real automáticamente tras el login.
-
-### Verificar modelos permitidos
-
-\`\`\`sh
-cd /home/spc/Projects/surf-ai/ViewMD
-python3 -m t160.siwc_auth status
-python3 -m t160.siwc_auth models
-\`\`\`
-
-La lista se obtiene desde el catálogo autorizado por la cuenta
-(\`GET https://api.openai.com/v1/models\`). Sólo se utilizará un
-\`slug\` listado allí. **No adivinar** nombres de modelos ni confiar
-en un catálogo de otra cuenta.
-
-## Activación del puente REAL (fase posterior al consentimiento)
-
-La T160 conserva el servicio existente \`surf-ai-bridge.service\`
-con \`--mock\`, y las pruebas continúan funcionando sin cuenta.
-
-Cuando estén confirmados \`status\` y \`models\`, realizar una
-activación controlada del servicio con \`SURF_OPENAI_MODEL\` igual a
-uno de los slugs autorizados, **sin \`--mock\`**. El nuevo código de
-\`t160/bridge.py\` usa exclusivamente \`siwc_auth.access_token()\`
-para GPT y manda un POST oficial a
-\`https://api.openai.com/v1/responses\` con \`store=false\`,
-\`stream=true\`. La respuesta se considera correcta sólo tras
-\`response.completed\`; ante error o pérdida de permiso, se detiene.
-No se utilizan endpoints internos de chatgpt.com.
-
-El cambio mock → real **no se ejecuta automáticamente** y necesita
-validación de consentimiento, modelo y una consulta explícita.
-Claude real sigue deshabilitado hasta contar con una solución de
-suscripción permitida sin facturación adicional.
-
-## Seguridad y recuperación
-
-- Directorio de credenciales en T160:
-  \`~/.config/surf-ai/siwc/\` (0700). \`profile.json\` y \`host.json\`
-  se escriben de forma atómica con 0600. La Surf no recibe estos archivos.
-- La renovación del token usa \`refresh_token\` rotativo y un lock de
-  archivo; no hay reconexiones periódicas, ni monitor en segundo plano.
-- No imprimir tokens, contraseñas ni códigos OAuth en logs. La URL de
-  reautorización con \`id_token_hint\` se abre sin imprimirla.
-- Si la cuenta no autoriza \`chatgpt.tokens.use.direct\`, se rechaza
-  todo acceso real. No existe fallback a API key, ni para OpenAI ni Anthropic.
-- No ejecutar Codex ni Claude Code como parte del inicio de sesión.
-- Si se pierde acceso, conservar el puente mock hasta reautorización
-  específica; no configurar métodos de pago ni facturación.
-- Para revocar permisos manualmente, utilizar las conexiones y el
-  control de uso de aplicaciones en la configuración de ChatGPT.
-  No borrar manualmente credenciales antes de revocar la conexión si
-  todavía se necesita cerrar la sesión remota.
-
-## Verificación realizada
-
-T160 (18/11/2026):
-- 26 pruebas unitarias y de protocolo **PASS**.
-- JWT RS256 comprobado con claves de prueba; rechazo de firma, issuer,
-  audiencia, nonce y permisos inválidos.
-- Renovación rotativa simulada y almacenamiento 0600/0700.
-- Detección de acceso inexistente y prohibición de llamadas API de pago.
-- Discovery OIDC público de \`auth.openai.com\` consultado desde T160:
-  issuer, authorize URL, token URL y JWKS verificados; algoritmos RS256.
-- Servicio real vigente **sin cambios**, \`--mock\`.
-- **No se ha realizado OAuth con una cuenta real**, ni inferencia GPT
-  real ni cargos de API. La prueba final de login exige consentimiento
-  de usuario desde el navegador de T160.
-
-Logs: \`~/Projects/surf-ai/siwc-offline-tests.log\`.
+- https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery
