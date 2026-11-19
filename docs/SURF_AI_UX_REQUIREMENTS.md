@@ -34,6 +34,23 @@ desplazamiento por barra, teclado y tacto.
 La Surf utiliza su teclado de pantalla ya instalado (Onboard);
 el botón y teclado propios de Surf AI se retiraron del código.
 
+### Menú contextual de conversaciones (ajuste posterior)
+
+Se eliminan los botones fijos «Renombrar» y «Eliminar» del pie de la
+banda izquierda. Sobre cualquier título de conversación:
+
+- **Ratón:** clic derecho abre un menú contextual con Renombrar y Eliminar
+- **Pantalla táctil:** pulsación prolongada abre el mismo menú
+- **Clic izquierdo o toque breve:** selecciona y abre la conversación
+
+Abrir el menú contextual no descarga el historial de la conversación.
+Renombrar conserva el diálogo de edición y Eliminar mantiene la
+confirmación explícita antes de borrar. La lista mantiene 20 títulos
+por página, ordenados por actividad más reciente.
+
+Cambio incorporado a GitHub; todavía no recompilado ni instalado en la
+Surface RT. No autoriza uso adicional de Commander o Codex.
+
 ### Controles inferiores compactos (ajuste posterior)
 
 La fila independiente de «Mensajes anteriores» y «Volver a recientes»
