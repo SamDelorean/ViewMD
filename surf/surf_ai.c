@@ -497,10 +497,11 @@ static void on_mode_selected(GtkToggleButton *button, gpointer ptr) {
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ui->mode_buttons[i]),
                                    FALSE);
   }
-  gtk_label_set_text(GTK_LABEL(ui->status),
-    (selected == 1 || selected == 3)
-    ? "Herramienta de codigo: integracion pendiente, sin ejecucion"
-    : "Proveedor de chat seleccionado");
+  if (ui->status)
+    gtk_label_set_text(GTK_LABEL(ui->status),
+      (selected == 1 || selected == 3)
+      ? "Herramienta de codigo: integracion pendiente, sin ejecucion"
+      : "Proveedor de chat seleccionado");
   if (ui->session_list && !ui->busy) load_catalog(ui, FALSE);
 }
 
