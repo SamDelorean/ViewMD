@@ -695,7 +695,7 @@ int main(int argc, char **argv) {
   SurfUI ui = {0};
   GtkWidget *root, *header, *scroller, *input_scroller, *bottom, *label;
   GtkWidget *workspace, *sidebar_box, *main_column, *toggle;
-  GtkWidget *side_scroll, *side_controls, *history_controls;
+  GtkWidget *side_scroll, *side_controls, *history_controls, *keyboard_panel;
   const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
   gtk_init(&argc, &argv);
   config = config_new();
@@ -705,6 +705,8 @@ int main(int argc, char **argv) {
   config->font_size = 13;
 
   ui.transcript = g_string_new("");
+  ui.reader_font_pt = 13;
+  ui.pinch_start_pt = 13;
   ui.session = g_uuid_string_random();
   ui.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_window_set_title(GTK_WINDOW(ui.window), "Surf AI");
@@ -720,11 +722,13 @@ int main(int argc, char **argv) {
   gtk_box_pack_start(GTK_BOX(root), header, FALSE, FALSE, 0);
   toggle = gtk_button_new_with_label("☰");
   gtk_widget_set_tooltip_text(toggle, "Mostrar u ocultar conversaciones");
+  gtk_widget_set_size_request(toggle, 48, 48);
   gtk_box_pack_start(GTK_BOX(header), toggle, FALSE, FALSE, 0);
   label = gtk_label_new("Surf AI");
   gtk_box_pack_start(GTK_BOX(header), label, FALSE, FALSE, 6);
   for (gint i = 0; i < 4; i++) {
     ui.mode_buttons[i] = gtk_toggle_button_new_with_label(modes[i]);
+    gtk_widget_set_size_request(ui.mode_buttons[i], -1, 48);
     g_object_set_data(G_OBJECT(ui.mode_buttons[i]), "surf-mode",
                       GINT_TO_POINTER(i));
     gtk_box_pack_start(GTK_BOX(header), ui.mode_buttons[i],
@@ -744,12 +748,17 @@ int main(int argc, char **argv) {
   gtk_widget_set_size_request(sidebar_box, 245, -1);
   gtk_container_add(GTK_CONTAINER(ui.sidebar), sidebar_box);
   ui.new_chat = gtk_button_new_with_label("+ Nueva conversación");
+  gtk_widget_set_size_request(ui.new_chat, -1, 48);
   gtk_box_pack_start(GTK_BOX(sidebar_box), ui.new_chat, FALSE, FALSE, 4);
   g_signal_connect(ui.new_chat, "clicked", G_CALLBACK(on_new_chat), &ui);
   label = gtk_label_new("Conversaciones · recientes primero");
   gtk_label_set_xalign(GTK_LABEL(label), 0);
   gtk_box_pack_start(GTK_BOX(sidebar_box), label, FALSE, FALSE, 4);
   side_scroll = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_kinetic_scrolling(
+      GTK_SCROLLED_WINDOW(side_scroll), TRUE);
+  gtk_scrolled_window_set_overlay_scrolling(
+      GTK_SCROLLED_WINDOW(side_scroll), FALSE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(side_scroll),
                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
   gtk_box_pack_start(GTK_BOX(sidebar_box), side_scroll, TRUE, TRUE, 0);
@@ -758,12 +767,15 @@ int main(int argc, char **argv) {
   g_signal_connect(ui.session_list, "row-selected",
                    G_CALLBACK(on_session_selected), &ui);
   ui.load_more = gtk_button_new_with_label("Cargar 20 más");
+  gtk_widget_set_size_request(ui.load_more, -1, 46);
   gtk_box_pack_start(GTK_BOX(sidebar_box), ui.load_more, FALSE, FALSE, 0);
   g_signal_connect(ui.load_more,"clicked",G_CALLBACK(on_load_more),&ui);
   side_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
   gtk_box_pack_start(GTK_BOX(sidebar_box), side_controls, FALSE, FALSE, 2);
   ui.rename_button = gtk_button_new_with_label("Renombrar");
   ui.delete_button = gtk_button_new_with_label("Eliminar");
+  gtk_widget_set_size_request(ui.rename_button, -1, 46);
+  gtk_widget_set_size_request(ui.delete_button, -1, 46);
   gtk_box_pack_start(GTK_BOX(side_controls),ui.rename_button,TRUE,TRUE,0);
   gtk_box_pack_start(GTK_BOX(side_controls),ui.delete_button,TRUE,TRUE,0);
   g_signal_connect(ui.rename_button,"clicked",G_CALLBACK(on_rename),&ui);
@@ -775,12 +787,26 @@ int main(int argc, char **argv) {
   gtk_box_pack_start(GTK_BOX(workspace), main_column, TRUE, TRUE, 6);
   scroller = gtk_scrolled_window_new(NULL, NULL);
   ui.scroll = scroller;
+  gtk_scrolled_window_set_kinetic_scrolling(
+      GTK_SCROLLED_WINDOW(scroller), TRUE);
+  gtk_scrolled_window_set_overlay_scrolling(
+      GTK_SCROLLED_WINDOW(scroller), FALSE);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
   gtk_box_pack_start(GTK_BOX(main_column), scroller, TRUE, TRUE, 0);
   ui.viewer = markyd_editor_new(NULL);
   gtk_container_add(GTK_CONTAINER(scroller),
                     markyd_editor_get_widget(ui.viewer));
+  ui.reader_css = gtk_css_provider_new();
+  gtk_style_context_add_provider(
+      gtk_widget_get_style_context(ui.viewer->text_view),
+      GTK_STYLE_PROVIDER(ui.reader_css),
+      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  apply_reader_font(&ui, ui.reader_font_pt);
+  GtkGesture *zoom = gtk_gesture_zoom_new(ui.viewer->text_view);
+  g_signal_connect(zoom, "begin", G_CALLBACK(on_zoom_begin), &ui);
+  g_signal_connect(zoom, "scale-changed",
+                   G_CALLBACK(on_zoom_changed), &ui);
   g_signal_connect(ui.viewer->text_view, "key-press-event",
                    G_CALLBACK(on_reader_key), &ui);
   history_controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
@@ -804,13 +830,29 @@ int main(int argc, char **argv) {
   gtk_container_add(GTK_CONTAINER(input_scroller), ui.input);
   g_signal_connect(ui.input, "key-press-event",
                    G_CALLBACK(on_input_key), &ui);
+  ui.keyboard_button = gtk_button_new_with_label("⌨ Teclado");
+  gtk_widget_set_tooltip_text(ui.keyboard_button,
+       "Abrir o cerrar teclado táctil integrado");
+  gtk_widget_set_size_request(ui.keyboard_button, 110, 48);
+  gtk_box_pack_start(GTK_BOX(bottom), ui.keyboard_button, FALSE, FALSE, 0);
+  g_signal_connect(ui.keyboard_button,"clicked",
+                   G_CALLBACK(on_toggle_touch_keyboard), &ui);
   ui.send = gtk_button_new_with_label("Enviar");
+  gtk_widget_set_size_request(ui.send, 96, 48);
   gtk_box_pack_end(GTK_BOX(bottom), ui.send, FALSE, FALSE, 0);
   g_signal_connect(ui.send, "clicked", G_CALLBACK(on_send), &ui);
 
   ui.status = gtk_label_new("T160 via tunel SSH local (127.0.0.1:8765)");
   gtk_label_set_xalign(GTK_LABEL(ui.status), 0);
   gtk_box_pack_start(GTK_BOX(main_column), ui.status, FALSE, FALSE, 0);
+  ui.keyboard_revealer = gtk_revealer_new();
+  gtk_revealer_set_reveal_child(GTK_REVEALER(ui.keyboard_revealer), FALSE);
+  gtk_revealer_set_transition_type(GTK_REVEALER(ui.keyboard_revealer),
+                                   GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
+  keyboard_panel = create_touch_keyboard(&ui);
+  gtk_container_add(GTK_CONTAINER(ui.keyboard_revealer), keyboard_panel);
+  gtk_box_pack_start(GTK_BOX(main_column), ui.keyboard_revealer,
+                     FALSE, FALSE, 0);
   on_new_chat(NULL, &ui);
   gtk_widget_show_all(ui.window);
   load_catalog(&ui, FALSE);
