@@ -77,6 +77,62 @@ class CatalogTest(unittest.TestCase):
         rows = self.rpc("LIST")
         self.assertFalse(any(key in v for t,v in rows if t == "SESSION"))
 
+    def test_reload_reads_t160_without_new_provider_call(self):
+        key = "reload-without-ask"
+        catalog.append_pair("openai", key, "AS2K diagnóstico",
+                            "Primera consulta", "Respuesta guardada")
+        out = self.rpc("LIST")
+        listing = next(v for t, v in out if t == "SESSION" and v.startswith(key + "\t"))
+        self.assertIn("\tready\t", listing)
+        before = catalog.context("openai", key)
+        response = self.rpc("RELOAD", session=key)
+        self.assertEqual(response[-1][0], "DONE")
+        metadata = next(v for t, v in response if t == "META")
+        self.assertTrue(metadata.startswith("idle\t"))
+        self.assertIn("AS2K diagnóstico", metadata)
+        self.assertEqual(len([1 for kind, _ in response if kind == "ITEM"]), 2)
+        self.assertEqual(catalog.context("openai", key), before)
+        after = self.rpc("LIST")
+        self.assertTrue(any("\tidle\t" in v for t,v in after
+                            if t == "SESSION" and v.startswith(key + "\t")))
+
+    def test_reload_unknown_and_invalid_argument(self):
+        response = self.rpc("RELOAD", session="not-existing")
+        self.assertEqual(response[-1][0], "ERROR")
+        response = self.rpc("RELOAD", session="not-existing",
+                            argument="bad")
+        self.assertEqual(response[-1][0], "ERROR")
+
+    def test_status_transitions_and_unread(self):
+        key = "test-working-state"
+        catalog.begin_request("anthropic", key, "Prueba de proceso")
+        listed = self.rpc("LIST", provider="anthropic")
+        self.assertTrue(any(key + "\t" in value and "\tworking\t" in value
+                            for kind, value in listed if kind == "SESSION"))
+        with self.assertRaises(ValueError):
+            catalog.begin_request("anthropic", key, "duplicado")
+        catalog.mark_failed("anthropic", key)
+        listed = self.rpc("LIST", provider="anthropic")
+        self.assertTrue(any(key + "\t" in value and "\terror\t" in value
+                            for kind, value in listed if kind == "SESSION"))
+        catalog.begin_request("anthropic", key, "intento nuevo")
+        catalog.append_pair("anthropic", key, "intento nuevo", "Pregunta",
+                            "Respuesta completada")
+        listed = self.rpc("LIST", provider="anthropic")
+        self.assertTrue(any(key + "\t" in value and "\tready\t" in value
+                            for kind, value in listed if kind == "SESSION"))
+        response = self.rpc("HISTORY", provider="anthropic", session=key,
+                            argument="0u")
+        self.assertEqual(response[-1][0], "DONE")
+        listed = self.rpc("LIST", provider="anthropic")
+        self.assertTrue(any(key + "\t" in value and "\tready\t" in value
+                            for kind, value in listed if kind == "SESSION"))
+        self.rpc("HISTORY", provider="anthropic", session=key,
+                 argument="0")
+        listed = self.rpc("LIST", provider="anthropic")
+        self.assertTrue(any(key + "\t" in value and "\tidle\t" in value
+                            for kind, value in listed if kind == "SESSION"))
+
     def test_history_five_message_window(self):
         catalog.append_pair("anthropic", "history-test", "Historial",
                             "Primera línea\nSegunda línea", "Respuesta 1")
