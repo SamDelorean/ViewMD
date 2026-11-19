@@ -22,9 +22,7 @@ typedef struct {
   guint history_offset;
   gint mode;
   gboolean suppress_selection;
-  gboolean keyboard_shift;
   gint reader_font_pt, pinch_start_pt;
-  GtkWidget *keyboard_revealer, *keyboard_button;
   GtkCssProvider *reader_css;
   MarkydEditor *viewer;
   GString *transcript;
@@ -589,79 +587,6 @@ static void on_zoom_changed(GtkGestureZoom *gesture, gdouble scale,
     apply_reader_font(ui, pt);
 }
 
-/* Self-contained GTK3 touch keyboard. No external OSK or elevated privileges. */
-static void on_keyboard_key(GtkButton *button, gpointer ptr) {
-  SurfUI *ui = ptr;
-  const gchar *key = g_object_get_data(G_OBJECT(button), "surf-key");
-  GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(ui->input));
-  if (!key) return;
-  if (g_strcmp0(key, "BACKSPACE") == 0) {
-    GtkTextIter cursor, previous;
-    gtk_text_buffer_get_iter_at_mark(buf, &cursor,
-                                    gtk_text_buffer_get_insert(buf));
-    previous = cursor;
-    if (gtk_text_iter_backward_char(&previous))
-      gtk_text_buffer_delete(buf, &previous, &cursor);
-  } else if (g_strcmp0(key, "SHIFT") == 0) {
-    ui->keyboard_shift = !ui->keyboard_shift;
-    gtk_button_set_label(button, ui->keyboard_shift ? "Mayús ✓" : "Mayús");
-  } else {
-    const gchar *source = key;
-    if (g_strcmp0(key, "SPACE") == 0) source = " ";
-    if (g_strcmp0(key, "ENTER") == 0) source = "\n";
-    gchar *to_insert = ui->keyboard_shift ? g_utf8_strup(source, -1)
-                                         : g_strdup(source);
-    gtk_text_buffer_insert_at_cursor(buf, to_insert, -1);
-    g_free(to_insert);
-  }
-}
-
-static void add_touch_key(SurfUI *ui, GtkWidget *row,
-                          const gchar *label, const gchar *key,
-                          gboolean wide) {
-  GtkWidget *button = gtk_button_new_with_label(label);
-  gtk_widget_set_can_focus(button, FALSE);
-  gtk_widget_set_size_request(button, wide ? 110 : 44, 44);
-  g_object_set_data_full(G_OBJECT(button), "surf-key",
-                         g_strdup(key), g_free);
-  g_signal_connect(button, "clicked", G_CALLBACK(on_keyboard_key), ui);
-  gtk_box_pack_start(GTK_BOX(row), button, wide, wide, 1);
-}
-
-static GtkWidget *create_touch_keyboard(SurfUI *ui) {
-  const gchar *rows[] = {
-    "1234567890", "qwertyuiop", "asdfghjklñ", "zxcvbnm,.-",
-    "áéíóúü¿?¡!", "<>()[]{}=+_/"
-  };
-  GtkWidget *keyboard = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
-  for (guint i = 0; i < G_N_ELEMENTS(rows); ++i) {
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-    gtk_widget_set_halign(row, GTK_ALIGN_CENTER);
-    gtk_box_pack_start(GTK_BOX(keyboard), row, FALSE, FALSE, 0);
-    for (const gchar *p = rows[i]; *p; p = g_utf8_next_char(p)) {
-      gchar label[8];
-      gint count = g_unichar_to_utf8(g_utf8_get_char(p), label);
-      label[count] = '\0';
-      add_touch_key(ui, row, label, label, FALSE);
-    }
-  }
-  GtkWidget *controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-  gtk_widget_set_halign(controls, GTK_ALIGN_CENTER);
-  gtk_box_pack_start(GTK_BOX(keyboard), controls, FALSE, FALSE, 0);
-  add_touch_key(ui, controls, "Mayús", "SHIFT", TRUE);
-  add_touch_key(ui, controls, "Espacio", "SPACE", TRUE);
-  add_touch_key(ui, controls, "Borrar", "BACKSPACE", TRUE);
-  add_touch_key(ui, controls, "Intro", "ENTER", TRUE);
-  return keyboard;
-}
-
-static void on_toggle_touch_keyboard(GtkButton *button, gpointer ptr) {
-  SurfUI *ui = ptr;
-  (void)button;
-  gtk_revealer_set_reveal_child(GTK_REVEALER(ui->keyboard_revealer),
-    !gtk_revealer_get_reveal_child(GTK_REVEALER(ui->keyboard_revealer)));
-}
-
 static gboolean on_reader_key(GtkWidget *widget, GdkEventKey *event,
                               gpointer ptr) {
   SurfUI *ui = ptr;
@@ -701,7 +626,7 @@ int main(int argc, char **argv) {
   SurfUI ui = {0};
   GtkWidget *root, *header, *scroller, *input_scroller, *bottom, *label;
   GtkWidget *workspace, *sidebar_box, *main_column, *toggle;
-  GtkWidget *side_scroll, *side_controls, *history_controls, *keyboard_panel;
+  GtkWidget *side_scroll, *side_controls, *history_controls;
   const gchar *modes[4] = {"GPT", "Codex", "Claude", "Claude Code"};
   gtk_init(&argc, &argv);
   config = config_new();
@@ -836,13 +761,6 @@ int main(int argc, char **argv) {
   gtk_container_add(GTK_CONTAINER(input_scroller), ui.input);
   g_signal_connect(ui.input, "key-press-event",
                    G_CALLBACK(on_input_key), &ui);
-  ui.keyboard_button = gtk_button_new_with_label("⌨ Teclado");
-  gtk_widget_set_tooltip_text(ui.keyboard_button,
-       "Abrir o cerrar teclado táctil integrado");
-  gtk_widget_set_size_request(ui.keyboard_button, 110, 48);
-  gtk_box_pack_start(GTK_BOX(bottom), ui.keyboard_button, FALSE, FALSE, 0);
-  g_signal_connect(ui.keyboard_button,"clicked",
-                   G_CALLBACK(on_toggle_touch_keyboard), &ui);
   ui.send = gtk_button_new_with_label("Enviar");
   gtk_widget_set_size_request(ui.send, 96, 48);
   gtk_box_pack_end(GTK_BOX(bottom), ui.send, FALSE, FALSE, 0);
@@ -851,14 +769,6 @@ int main(int argc, char **argv) {
   ui.status = gtk_label_new("T160 via tunel SSH local (127.0.0.1:8765)");
   gtk_label_set_xalign(GTK_LABEL(ui.status), 0);
   gtk_box_pack_start(GTK_BOX(main_column), ui.status, FALSE, FALSE, 0);
-  ui.keyboard_revealer = gtk_revealer_new();
-  gtk_revealer_set_reveal_child(GTK_REVEALER(ui.keyboard_revealer), FALSE);
-  gtk_revealer_set_transition_type(GTK_REVEALER(ui.keyboard_revealer),
-                                   GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
-  keyboard_panel = create_touch_keyboard(&ui);
-  gtk_container_add(GTK_CONTAINER(ui.keyboard_revealer), keyboard_panel);
-  gtk_box_pack_start(GTK_BOX(main_column), ui.keyboard_revealer,
-                     FALSE, FALSE, 0);
   on_new_chat(NULL, &ui);
   gtk_widget_show_all(ui.window);
   load_catalog(&ui, FALSE);
