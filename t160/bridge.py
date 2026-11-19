@@ -16,10 +16,11 @@ import urllib.error
 import urllib.request
 
 try:
-    from . import catalog, siwc_auth
+    from . import catalog, siwc_auth, codex_adapter
 except ImportError:
     import catalog
     import siwc_auth
+    import codex_adapter
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("SURF_AI_PORT", "8765"))
@@ -41,12 +42,20 @@ def send(handler, kind, text=None):
     handler.wfile.flush()
 
 
-def stream_provider(provider, messages):
+def stream_provider(provider, messages, session=None):
     """Only the ChatGPT-plan OAuth route is allowed in live Surf AI.
 
     Never use OPENAI_API_KEY, ANTHROPIC_API_KEY or a paid API fallback.
     Anthropic subscriptions need a distinct authorized integration.
     """
+    if provider == "codex":
+        if not session:
+            raise RuntimeError("Identificador de conversación Codex requerido")
+        if not messages or messages[-1].get("role") != "user":
+            raise RuntimeError("Codex requiere un mensaje válido")
+        yield from codex_adapter.stream_text_only(
+            session, messages[-1]["content"])
+        return
     if provider != "openai":
         raise RuntimeError(
             "Claude real pendiente: no se permite facturación adicional")
@@ -109,7 +118,7 @@ class Handler(socketserver.StreamRequestHandler):
         try:
             provider = fields[1].decode("ascii")
             session = fields[2].decode("ascii")
-            if provider not in ("openai", "anthropic"):
+            if provider not in ("openai", "anthropic", "codex"):
                 raise ValueError("Proveedor inválido")
             if not session or len(session) > 80 or not all(
                     c.isalnum() or c in "-_" for c in session):
@@ -196,7 +205,7 @@ class Handler(socketserver.StreamRequestHandler):
                     send(self, "DELTA", fragment)
                     answer.append(fragment)
             else:
-                for fragment in stream_provider(provider, history):
+                for fragment in stream_provider(provider, history, session=session):
                     send(self, "DELTA", fragment)
                     answer.append(fragment)
             if not answer:
